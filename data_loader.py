@@ -3,7 +3,7 @@ import json
 from typing import Dict
 
 
-def load_data(rootdir: str) -> str:
+def load_data(rootdir: str) -> Dict[str, Dict[str, str]]:
     """
     Use os.walk to traverse through subfolders and access .json files
 
