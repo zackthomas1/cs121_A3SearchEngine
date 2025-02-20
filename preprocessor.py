@@ -8,7 +8,8 @@ class Preprocessor:
     def __init__(self, rootdir: str):
         self.root: str = rootdir                   # path to root directory
         self.data: Dict[str, Dict[str, str]] = {}  # dictionary data of all JSON file
-        
+        self.loaded: bool = False                  # True if data is loaded
+
 
     def load_data(self) -> None:
         """
@@ -38,13 +39,18 @@ class Preprocessor:
         NOTE: Few questions with assumptions is annotated with (ask TA). Delete when resolved.
         """
         data: Dict[str, Dict[str, str]] = {}  # {filepath: {data type (e.g. url, html content): corresponding data value}}
-        # Read all JSON files in all subfolders and load into dictionary
-        for root, _, files in os.walk(self.root):  # os.walk returns [current folder, subfolders, files] and if subfolders exists, it 
-            for file in files:
-                if file.endswith(".json"):  # NOTE: If all files are guaranteed to be JSON, we can get rid of this. (ask TA)
-                    filepath = os.path.join(root, file)  # Generates full path (adaptive to operating system)
-                    with open(filepath, "r", encoding="utf-8") as fp:
-                        data[filepath] = json.load(fp)  # json.load converts JSON file to Python Dictionary
+        try:
+            # Read all JSON files in all subfolders and load into dictionary
+            for root, _, files in os.walk(self.root):  # os.walk returns [current folder, subfolders, files] and if subfolders exists, it 
+                for file in files:
+                    if file.endswith(".json"):  # NOTE: If all files are guaranteed to be JSON, we can get rid of this. (ask TA)
+                        filepath = os.path.join(root, file)  # Generates full path (adaptive to operating system)
+                        with open(filepath, "r", encoding="utf-8") as fp:
+                            data[filepath] = json.load(fp)  # json.load converts JSON file to Python Dictionary
+        except Exception as e:
+            print(f"[ERROR] {type(e)} from load_data(): Data failed to load")
+            # raise  # no need to close fp manually since "with open" handles it
+        self.loaded = True
         self.data = data
 
 
@@ -55,4 +61,17 @@ class Preprocessor:
 
     def tokenize(self, text: str):
         pass
-        
+    
+
+    def get_root(self) -> str:
+        return self.root
+    
+
+    def get_data(self) -> Dict[str, Dict[str, str]]:
+        return self.data
+    
+
+    def is_data_loaded(self) -> bool:
+        return self.loaded
+    
+    
