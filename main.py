@@ -1,23 +1,19 @@
 import sys
-import data_loader
+from preprocessor import Preprocessor
 
 
 def run(rootpath: str) -> None:
-    data = data_loader.load_data(rootpath)
+    pp = Preprocessor(rootpath)
+    pp.load_data()
 
-    # NOTE: This is code for testing & debugging
-    # TODO: DELETE at least before submission
-    for i, (k, v) in enumerate(data.items()):
-        print(f"{k}, {v}")
-        print(f"KEYS: {k}")
-        print(f"Val's keys: {v.keys()}")
-        if i == 1:
-            break
-
+    # NOTE: This code is testing/debugging purposes
+    # TODO: DELETE at least before final submission
+    for path, v in pp.get_data().items():
+        print(f"{path}, {v.keys()}")
+        break
 
 
 if __name__ == "__main__":
     rootpath = sys.argv[1]  # relative path to root directory name ("/DEV")
     run(sys.argv[1])
-
 
