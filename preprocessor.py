@@ -1,15 +1,13 @@
 import os
 import json
-import re
-import nltk
-from nltk.tokenizer import word_tokenize
-from nltk.stem import PorterStemmer
 from bs4 import BeautifulSoup
 from typing import Dict, List
+import nltk
+from nltk.tokenize import word_tokenize
+from nltk.stem import PorterStemmer
 
 
 nltk.download("punkt")
-
 
 class Preprocessor:
     def __init__(self, rootdir: str):
@@ -66,15 +64,20 @@ class Preprocessor:
         return soup.get_text(separator=" ")
     
 
-    def tokenize(self, text: str):
+    def tokenize(self, text: str) -> List[str]:
         """
-        Punkt Tokenizer:
-        
+        Return:
+            Tokens that's stemmed by Porter Stemmer
+        Tokenizer:
+            https://www.nltk.org/howto/tokenize.html#regression-tests-nltkwordtokenizer
         Porter Stemmer:
-            https://www.nltk.org/howto/stem.html
+            https://www.nltk.org/howto/stem.html#unit-tests-for-the-porter-stemmer
         """
         text = text.lower()
-        words = word_tokenize(text)
+        # 1. use NLTK to tokenize
+        # 2. then call PorterStemmer
+        return [stem for stem in text]  # TODO: change this later (placeholder)
+        
 
     def get_root(self) -> str:
         return self.root
@@ -86,4 +89,5 @@ class Preprocessor:
 
     def is_data_loaded(self) -> bool:
         return self.loaded
+    
     
