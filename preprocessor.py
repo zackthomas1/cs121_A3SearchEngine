@@ -1,7 +1,14 @@
 import os
 import json
+import re
+import nltk
+from nltk.tokenizer import word_tokenize
+from nltk.stem import PorterStemmer
 from bs4 import BeautifulSoup
 from typing import Dict, List
+
+
+nltk.download("punkt")
 
 
 class Preprocessor:
@@ -60,8 +67,14 @@ class Preprocessor:
     
 
     def tokenize(self, text: str):
-        pass
-    
+        """
+        Punkt Tokenizer:
+        
+        Porter Stemmer:
+            https://www.nltk.org/howto/stem.html
+        """
+        text = text.lower()
+        words = word_tokenize(text)
 
     def get_root(self) -> str:
         return self.root
@@ -73,5 +86,4 @@ class Preprocessor:
 
     def is_data_loaded(self) -> bool:
         return self.loaded
-    
     
