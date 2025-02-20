@@ -15,10 +15,15 @@ $ python3 -m venv .venv
 
 Activate virtual environment (bash) 
 $ source .venv/bin/activate
+
+Activate virtual environment (windows) 
 $ source .venv/Scripts/activate
 
 Deactivate virtual environment (bash) 
 $ deactivate
+
+## Install Dependencies 
+python -m pip install -r packages/requirements.txt
 
 ## Verify the Environment 
 $ which python
