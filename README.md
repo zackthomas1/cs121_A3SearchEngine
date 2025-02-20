@@ -25,7 +25,7 @@ $ ```deactivate```
 ## Install Dependencies 
 ```python -m pip install -r packages/requirements.txt```
 
-## Verify the Environment\
+## Verify the Environment
 $ ```which python```
 
 
