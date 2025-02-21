@@ -46,7 +46,7 @@ $ ```deactivate```
             "program": "main.py",
             "console": "integratedTerminal",
             "args": [
-                "developer/Dev"
+                "--rootdir", "developer/DEV"
             ]
         }
     ]
