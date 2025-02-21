@@ -5,20 +5,27 @@ import shelve
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
+from nltk.stem import WordNetLemmatizer
 from argparse import ArgumentParser
 from bs4 import BeautifulSoup
+from collections import Counter
 
 # Download NLTK resources
 nltk.download('punkt_tab')
 
-"""
-These are a few possible functions I thought of just off the top of my head.
-They are not requirements for the project.
-Please replace/delete them if you can think of a better architecture or high level functions.
-"""
 
-def stemm_tokens(tokens: list[str]) -> list[str]: 
-    pass
+def construct_token_freq_counter(tokens) -> None:
+    counter = Counter()
+    counter.update(tokens)
+    return counter
+
+def lemmatize_tokens(tokens: list[str]) -> list[str]:
+    lemmatizer = WordNetLemmatizer() 
+    return [lemmatizer.lemmatize(token) for token in tokens]
+
+def stem_tokens(tokens: list[str]) -> list[str]: 
+    stemmer = PorterStemmer()
+    return [stemmer.stem(token) for token in tokens]
 
 def tokenize_text(text: str) -> list[str]: 
     return word_tokenize(text)
@@ -40,7 +47,7 @@ def extract_text_from_html_content(content: str) -> list[str]:
     except Exception as e:
         print(f"An unexpected error has orccurred: {e}") 
         return None 
-        
+
 def read_json_file(filepath: str) -> dict[str, str]:
     """
     """
@@ -59,7 +66,6 @@ def read_json_file(filepath: str) -> dict[str, str]:
         print(f"An unexpected error has orccurred: {e}") 
         return None 
 
-
 def walk_directory(rootdir: str) -> None:
     """
     
@@ -77,9 +83,10 @@ def walk_directory(rootdir: str) -> None:
             if not text: 
                 continue
             
-            tokens = tokenize_text(text)
+            tokens = stem_tokens(tokenize_text(text))
 
-
+            token_freq = construct_token_freq_counter(tokens)
+            print(token_freq)
 
 """
 Entry point
