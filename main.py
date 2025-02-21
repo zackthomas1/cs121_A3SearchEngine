@@ -1,6 +1,5 @@
 import os
 import json
-import logging
 import shelve
 import nltk
 from nltk.tokenize import word_tokenize
@@ -9,30 +8,48 @@ from nltk.stem import WordNetLemmatizer
 from argparse import ArgumentParser
 from bs4 import BeautifulSoup
 from collections import Counter
-from urllib.parse import urlparse
+from utils import clean_url, get_logger, read_json_file
 
 # Download NLTK resources
 nltk.download('punkt_tab')
 
-#TODO: These data structures should not be stored in memory. 
-# They need to be stored in a file. The inverse index should be store across multiple files
-docid_url_index : dict[int, str] = {}
-inverse_index : dict[int, list[tuple[str, int]]]  = {}
+# create logger
+logger = get_logger("MAIN")
 
-def normalize_url(url):
-    if url.endswith("/"):
-        return url.rstrip("/")
-    return url
+# specifiy global path to shelve files
+inverse_index_path = 'shelve/inverse_index.shelve'
+docid_index_path = 'shelve/docid_index.shelve'
+
+# Shelves are preferable when: 
+#     Dataset is large and does not fit in memory
+#     Random access to specific terms in in index required 
+#     Incremental update indexd with reloading entire data structure
+
+def clear_index(restart: bool) -> None: 
+    if restart: 
+        with shelve.open(inverse_index_path) as db: 
+            db.clear()
+
+        with shelve.open(docid_index_path) as db: 
+            db.clear()
+
+def is_unique_url(url: str) -> bool: 
+    with shelve.open(docid_index_path) as db: 
+        return not url in set(db.values())
 
 def update_docid_index(docid : int, url: str) -> None: 
-    docid_url_index[docid] = url
+    with shelve.open(docid_index_path, writeback=True) as db:
+        db[str(docid)] = url
 
 def update_inverse_index(docid: int, token_count: Counter) -> None: 
-    for token, count in token_count.items(): 
-        if token in inverse_index:
-            inverse_index[token].append((docid, count))
-        else: 
-            inverse_index[token] = [(docid, count)]
+    """
+    """
+    with shelve.open(inverse_index_path, writeback=True) as db: 
+        for token, count in token_count.items(): 
+            if token in db.keys():
+                db[token].append((docid, count))
+            else: 
+                db[token] = [(docid, count)]
 
 def construct_token_freq_counter(tokens) -> Counter:
     counter = Counter()
@@ -47,13 +64,12 @@ def stem_tokens(tokens: list[str]) -> list[str]:
     stemmer = PorterStemmer()
     return [stemmer.stem(token) for token in tokens]
 
-def tokenize_text(text: str) -> list[str]: 
+def tokenize_text(text: str) -> list[str]:
     return word_tokenize(text)
 
 def extract_text_from_html_content(content: str) -> list[str]: 
     """
     """
-
     try:
         # Get the text from the html response
         soup = BeautifulSoup(content, 'html.parser')
@@ -66,51 +82,41 @@ def extract_text_from_html_content(content: str) -> list[str]:
         text = soup.get_text(separator=" ", strip=True)
         return text
     except Exception as e:
-        print(f"An unexpected error has orccurred: {e}") 
+        logger.error(f"An unexpected error has orccurred: {e}") 
         return None 
 
 def read_json_file(filepath: str) -> dict[str, str]:
     """
     """
-
     try: 
         with open(filepath, 'r') as file: 
             data = json.load(file)
             return data
     except FileNotFoundError:
-        print(f"File note found at path: {filepath}")
+        logger.error(f"File note found at path: {filepath}")
         return None 
     except json.JSONDecodeError: 
-        print(f"Invalid JSON format in file:  {filepath}")
+        logger.error(f"Invalid JSON format in file:  {filepath}")
         return None 
     except Exception as e:
-        print(f"An unexpected error has orccurred: {e}") 
+        logger.error(f"An unexpected error has orccurred: {e}") 
         return None 
- 
+
 def walk_directory(rootdir: str) -> None:
     """
     """
-    
     docid = 0
     for root, dirs, files in os.walk(rootdir):
         for file in files:
             data = read_json_file(os.path.join(root, file)) 
-            
-            if not data: 
+            if not data:
                 continue
-
-            url = data['url']
-            parsed_url = urlparse(url)
-            if 'index' in parsed_url.path:
-                clean_url = normalize_url(parsed_url._replace(path="", query="", fragment="").geturl())
-            else:
-                clean_url = normalize_url(parsed_url._replace(query="", fragment="").geturl())
-
-            if clean_url in set(docid_url_index.values()):
+            
+            url = clean_url(data['url'])
+            if not is_unique_url(url):
                 continue
 
             text = extract_text_from_html_content(data['content'])
-
             if not text: 
                 continue
             
@@ -118,7 +124,7 @@ def walk_directory(rootdir: str) -> None:
             token_count = construct_token_freq_counter(tokens)
             
             update_inverse_index(docid, token_count)
-            update_docid_index(docid, clean_url)
+            update_docid_index(docid, url)
 
             docid += 1
 """
@@ -128,6 +134,8 @@ Call 'python main.py' from the command line to run program
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--rootdir", type=str, default="developer\DEV")
+    parser.add_argument("--restart", action="store_true", default=False)
     args = parser.parse_args()
 
+    clear_index(args.restart)
     walk_directory(args.rootdir)
