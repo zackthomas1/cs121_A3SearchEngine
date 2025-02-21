@@ -11,7 +11,7 @@ https://www.ics.uci.edu/~algol/teaching/informatics141cs121w2022/a3files/develop
 Creates lightweight python environment to manage project dependecies
 
 Create virtual environment (bash)\
-$ ```python3 -m venv .venv```
+$ ```python -m venv .venv```
 
 Activate virtual environment (bash)\
 $ ```source .venv/bin/activate```
