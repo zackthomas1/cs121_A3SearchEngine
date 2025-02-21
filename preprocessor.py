@@ -1,19 +1,26 @@
 import os
 import json
 from bs4 import BeautifulSoup
-from typing import Dict, List
+from collections import Counter
+from typing import Dict, List, Counter
 import nltk
-from nltk.tokenize import word_tokenize
+from nltk.tokenize import word_tokenize 
 from nltk.stem import PorterStemmer
 
 
-nltk.download("punkt")
+# punkt is a tokenization model in the NLTK data package
+#   which provides pre-trained tokenizers for splitting text into sentences and words
+#   that effectively handles punctuation and contractions especially.
+# nltk.word_tokenize() requires punkt to be downloaded before getting called.
+# nltk.download("punkt")  # THIS IS MOVED TO main.py
+
 
 class Preprocessor:
     def __init__(self, rootdir: str):
         self.root: str = rootdir                   # path to root directory
         self.data: Dict[str, Dict[str, str]] = {}  # dictionary data of all JSON file
         self.loaded: bool = False                  # True if data is loaded
+        self.stemmer = PorterStemmer()             # Porter Stemmer from NLTK package
 
 
     def load_data(self) -> None:
@@ -61,22 +68,30 @@ class Preprocessor:
 
     def parse_html(self, content: str) -> str:
         soup = BeautifulSoup(content, "html.parser")
-        return soup.get_text(separator=" ")
+        return soup.get_text(separator=" ", strip=True)
     
 
     def tokenize(self, text: str) -> List[str]:
         """
         Return:
-            Tokens that's stemmed by Porter Stemmer
+            List of tokens stemmed by Porter Stemmer
         Tokenizer:
             https://www.nltk.org/howto/tokenize.html#regression-tests-nltkwordtokenizer
         Porter Stemmer:
             https://www.nltk.org/howto/stem.html#unit-tests-for-the-porter-stemmer
         """
-        text = text.lower()
-        # 1. use NLTK to tokenize
-        # 2. then call PorterStemmer
-        return [stem for stem in text]  # TODO: change this later (placeholder)
+        words = word_tokenize(text.lower())  # 1. Use NLTK to tokenize all lowercased text
+        return [self.stemmer.stem(word) for word in words]  # 2. Stem them using PorterStemmer
+    
+
+    def get_tok_freq(self, text: str) -> Counter:
+        """
+        Counter for frequency {token: freq}
+        Alternatively:
+            https://www.nltk.org/api/nltk.probability.FreqDist.html#nltk.probability.FreqDist 
+        """
+        words = word_tokenize(text.lower())
+        return Counter([self.stemmer.stem(word) for word in words])
         
 
     def get_root(self) -> str:
