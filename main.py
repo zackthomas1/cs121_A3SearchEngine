@@ -8,7 +8,7 @@ from nltk.stem import WordNetLemmatizer
 from argparse import ArgumentParser
 from bs4 import BeautifulSoup
 from collections import Counter
-from utils import clean_url, get_logger, read_json_file
+from utils import clean_url, get_logger
 
 # Download NLTK resources
 nltk.download('punkt_tab')
