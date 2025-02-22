@@ -1,6 +1,6 @@
 __pycache__/
 developer/
 logs/
-shelve/
+json/
 .venv/
 .vscode/
