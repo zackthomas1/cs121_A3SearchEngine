@@ -1,4 +1,5 @@
 import shelve
+from inverted_index import SHELVE_DB
 
 # Code Report: 
 # A table with assorted numbers pertaining to your index. 
@@ -20,5 +21,5 @@ def list_urls(docid_index_filepath: str) -> None:
         return list(db.values())
 
 if __name__ == "__main__":
-    print_inverse_index('shelve/inverse_index.shelve')
+    print_inverse_index(SHELVE_DB)
     # list_urls()
