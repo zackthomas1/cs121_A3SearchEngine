@@ -14,7 +14,7 @@ from utils import clean_url, get_logger
 
 # Constants 
 DOC_THRESHOLD = 100
-SHELVE_DB = "shelve/inverted_index"
+INDEX_DIR = "json"
 
 #
 lemmatizer = WordNetLemmatizer()
@@ -27,6 +27,7 @@ class InvertedIndex:
         self.doc_count = 0
         self.doc_id_map = {} # map file names to docid
         self.logger = get_logger("INVERTED_INDEX")
+        os.makedirs(INDEX_DIR, exist_ok=True) # Ensure index storage directory exist
 
     def build_index(self, folder_path): 
         """
@@ -86,22 +87,40 @@ class InvertedIndex:
             gc.collect()
 
     def __dump_to_disk(self): 
-        """Store current index to disk using shelve"""
-        self.logger.info("Dumping in memory index to disk")
-        with shelve.open(SHELVE_DB) as db:
-            for token, postings in self.index.items(): 
-                if token in db: 
-                    db[token].extend(postings)
-                else:
-                    db[token] = postings
+        """Store current index to JSON file"""
+        index_file = os.path.join(INDEX_DIR, f"index_part_{len(os.listdir(INDEX_DIR))}.json")
+
+        # Load existing index
+        if os.path.exists(index_file):
+            with open(index_file, "r", encoding="utf-8") as f: 
+                existing_data = json.load(f)
+        else: 
+            existing_data = {}
+
+        for token, postings in self.index.items(): 
+            if token in existing_data: 
+                existing_data[token].extend(postings)
+            else: 
+                existing_data[token] = postings
+
+        with open(index_file, "w", encoding="utf-8") as f:
+            json.dump(existing_data, f, indent=4)
 
     def __merge_from_disk(self, query_tokens):
         """Loads only relevant part of index from disk for a given query."""
         merged_index = {}
-        with shelve.open(SHELVE_DB) as db:
-            for token in query_tokens:
-                if token in db: 
-                    merged_index[token] = db[token]
+        for file_name in os.listdir(INDEX_DIR): 
+            file_path = os.path.join(INDEX_DIR, file_name)
+            with open(file_path, "r", encoding="utf-8") as f: 
+                index_part = json.load(f)
+
+            for token in query_tokens: 
+                if token in index_part: 
+                    if token in merged_index: 
+                        merged_index[token].extend(index_part[token])
+                    else: 
+                        merged_index[token] = index_part[token]
+
         return merged_index
 
     def __construct_token_freq_counter(tokens) -> Counter:
