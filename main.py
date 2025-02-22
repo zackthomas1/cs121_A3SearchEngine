@@ -2,6 +2,7 @@ import os
 import json
 import shelve
 import nltk
+from nltk.tokenize import RegexpTokenizer
 from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
 from nltk.stem import WordNetLemmatizer
@@ -9,6 +10,9 @@ from argparse import ArgumentParser
 from bs4 import BeautifulSoup
 from collections import Counter
 from utils import clean_url, get_logger
+
+#TODO: Implement partial indexing 
+#TODO: Load-Merge-Dump
 
 # Download NLTK resources
 nltk.download('punkt_tab')
@@ -24,6 +28,11 @@ docid_index_path = 'shelve/docid_index.shelve'
 #     Dataset is large and does not fit in memory
 #     Random access to specific terms in in index required 
 #     Incremental update indexd with reloading entire data structure
+
+#
+lemmatizer = WordNetLemmatizer()
+stemmer = PorterStemmer()
+tokenizer = RegexpTokenizer(r'\w+')
 
 def clear_index(restart: bool) -> None: 
     if restart: 
@@ -44,6 +53,7 @@ def update_docid_index(docid : int, url: str) -> None:
 def update_inverse_index(docid: int, token_count: Counter) -> None: 
     """
     """
+    logger.info(f"Updating inverse index")
     with shelve.open(inverse_index_path, writeback=True) as db: 
         for token, count in token_count.items(): 
             if token in db.keys():
@@ -57,20 +67,22 @@ def construct_token_freq_counter(tokens) -> Counter:
     return counter
 
 def lemmatize_tokens(tokens: list[str]) -> list[str]:
-    lemmatizer = WordNetLemmatizer() 
     return [lemmatizer.lemmatize(token) for token in tokens]
 
 def stem_tokens(tokens: list[str]) -> list[str]: 
-    stemmer = PorterStemmer()
-    return [stemmer.stem(token) for token in tokens]
+    return [stemmer.stem(token) for token in tokens if token.isalnum()]
 
 def tokenize_text(text: str) -> list[str]:
-    return word_tokenize(text)
+    logger.info(f"Tokenizing text")
+    # return word_tokenize(text)
+    return tokenizer.tokenize(text)
 
 def extract_text_from_html_content(content: str) -> list[str]: 
     """
     """
     try:
+        #TODO: Check that the content is html before parsing. Document content may also be xml
+
         # Get the text from the html response
         soup = BeautifulSoup(content, 'html.parser')
 
@@ -91,6 +103,7 @@ def read_json_file(filepath: str) -> dict[str, str]:
     try: 
         with open(filepath, 'r') as file: 
             data = json.load(file)
+            logger.info(f"Json file loaded")
             return data
     except FileNotFoundError:
         logger.error(f"File note found at path: {filepath}")
@@ -110,21 +123,25 @@ def walk_directory(rootdir: str) -> None:
         for file in files:
             data = read_json_file(os.path.join(root, file)) 
             if not data:
+                logger.warning(f"Skipping empty JSON file: {os.path.join(root, file)}")
                 continue
             
             url = clean_url(data['url'])
             if not is_unique_url(url):
+                logger.warning(f"Skipping non-unique Url: {os.path.join(root, file)} - {url}")
                 continue
 
             text = extract_text_from_html_content(data['content'])
             if not text: 
+                logger.warning(f"Skipping empty HTML Text content: {os.path.join(root, file)}")
                 continue
-            
+
+            logger.info(f"Indexing document: {os.path.join(root, file)}")
             tokens = stem_tokens(tokenize_text(text))
             token_count = construct_token_freq_counter(tokens)
             
             update_inverse_index(docid, token_count)
-            update_docid_index(docid, url)
+            # update_docid_index(docid, url)
 
             docid += 1
 """
