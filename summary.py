@@ -1,5 +1,6 @@
 import shelve
-from inverted_index import SHELVE_DB
+from inverted_index import InvertedIndex
+from inverted_index import PARTIAL_INDEX_DIR, MASTER_INDEX_DIR
 
 # Code Report: 
 # A table with assorted numbers pertaining to your index. 
@@ -8,18 +9,9 @@ from inverted_index import SHELVE_DB
 #   Number of [unique] tokens
 #   Total size (in KB) of index on disk.
 
-def print_inverse_index(inverse_index_filepath: str) -> None: 
-    with shelve.open(inverse_index_filepath) as db:
-        for token, doc_freq in db.items(): 
-            print(f"{token} - ", end=" ")
-            for docid, freq in doc_freq:
-                print(f"({docid}, {freq})", end= " ")
-            print()
-
-def list_urls(docid_index_filepath: str) -> None: 
-    with shelve.open(docid_index_filepath) as db:
-        return list(db.values())
 
 if __name__ == "__main__":
-    print_inverse_index(SHELVE_DB)
+    index = InvertedIndex()
+    # index.build_master_index()
+    print(index.get_unique_tokens())
     # list_urls()
