@@ -13,5 +13,5 @@ from inverted_index import PARTIAL_INDEX_DIR, MASTER_INDEX_DIR
 if __name__ == "__main__":
     index = InvertedIndex()
     # index.build_master_index()
-    print(index.get_unique_tokens())
+    print(len(index.get_unique_tokens()))
     # list_urls()
