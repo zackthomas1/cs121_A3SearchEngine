@@ -3,9 +3,6 @@ from argparse import ArgumentParser
 from inverted_index import InvertedIndex
 from utils import get_logger
 
-# create logger
-logger = get_logger("MAIN")
-
 """
 Entry point
 Call 'python main.py' from the command line to run program
