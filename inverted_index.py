@@ -16,9 +16,11 @@ from utils import clean_url, is_non_html_extension, get_logger
 # Constants 
 DOC_THRESHOLD = 250 # Dump index to latest JSON file every 100 docs
 # NEW_FILE_THRESHOLD = 1000   # Create new index file every 1000 docs
+DOC_ID_DIR = "index/doc_id_map"
 PARTIAL_INDEX_DIR = "index/partial_index"
 MASTER_INDEX_DIR = "index/master_index"
 MASTER_INDEX_FILE = os.path.join(MASTER_INDEX_DIR, "master_index.json")
+DOC_ID_MAP_FILE = os.path.join(DOC_ID_DIR, "doc_id_map.json")
 
 #
 lemmatizer = WordNetLemmatizer()
@@ -33,7 +35,9 @@ class InvertedIndex:
         # self.current_index_file = self.get_latest_index_file()
         self.doc_id_map = {} # map file names to docid
         self.logger = get_logger("INVERTED_INDEX")
-        os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True) # Ensure index storage directory exist
+        os.makedirs(DOC_ID_DIR, exist_ok=True)  # Ensure index storage directory exist
+        os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
+        os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
 
     def build_index(self, folder_path): 
         """
@@ -49,7 +53,7 @@ class InvertedIndex:
                 
         # Dump any remaining tokens to disk
         if self.index: 
-            self.__dump_to_disk()
+            self.__save_index_to_disk()
             self.index.clear()
             gc.collect()
 
@@ -77,25 +81,6 @@ class InvertedIndex:
 
         self.logger.info(f"Master index built successfully and saved to {MASTER_INDEX_FILE}")
     
-    def get_unique_tokens(self):
-        """Returns tokens that appear only once in a single document."""
-        unique_tokens = set()
-
-        # Load master index if it exists
-        if os.path.exists(MASTER_INDEX_FILE):
-            with open(MASTER_INDEX_FILE, "r", encoding="utf-8") as f:
-                index_data = json.load(f)
-        else:
-            index_data = {}
-
-        # Iterate through all tokens
-        for token, postings in index_data.items():
-            # Check if the token appears in exactly one document and has a frequency of 1
-            if len(postings) == 1 and postings[0][1] == 1:
-                unique_tokens.add(token)
-
-        return list(unique_tokens)
-
     def search(self, query): 
         self.logger.info(f"Searching for query tokens in inverted index: {query}")
         tokens = InvertedIndex.__stem_tokens(InvertedIndex.__tokenize_text(query))
@@ -121,6 +106,8 @@ class InvertedIndex:
             self.logger.warning(f"Skipping empty HTML text content: {file_path}")
             return
 
+        self.__update_doc_id_map(doc_id, url)
+
         # self.logger.info(f"Tokenizing document content")
         tokens = InvertedIndex.__stem_tokens(InvertedIndex.__tokenize_text(text))
         token_freq = InvertedIndex.__construct_token_freq_counter(tokens)
@@ -135,30 +122,61 @@ class InvertedIndex:
         # If threshould reached, store partial index and reset RAM
         if self.doc_count >= DOC_THRESHOLD: 
             self.__dump_to_disk()
-            self.index.clear()
-            self.doc_count = 0 
-            gc.collect()
 
-    def __dump_to_disk(self): 
+    def __update_doc_id_map(self, doc_id, url): 
+        self.doc_id_map[doc_id] = url
+
+    def __save_doc_id_map_to_disk(self): 
+        """Saves the Doc_ID-URL mapping to disk as a JSON file"""
+        if os.path.exists(DOC_ID_MAP_FILE):
+            with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
+                existing_map = json.load(f)
+        else: 
+            existing_map = {}
+
+        for key, value in self.doc_id_map.items(): 
+            existing_map[key] = value
+        
+        # write index to file
+        with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
+            json.dump(existing_map, f, indent=4)
+
+    def __save_index_to_disk(self): 
         """Store current index to JSON file"""
         self.logger.info("Dumping index to disk")
+        
+        # Create a new .json partial index file
         index_file = os.path.join(PARTIAL_INDEX_DIR, f"index_part_{len(os.listdir(PARTIAL_INDEX_DIR))}.json")
 
-        # Load existing index
+        # check if .json partial index file already existing index
         if os.path.exists(index_file):
             with open(index_file, "r", encoding="utf-8") as f: 
                 existing_data = json.load(f)
         else: 
             existing_data = {}
 
+        # Merge exisiting index with new data from in memory index
         for token, postings in self.index.items(): 
             if token in existing_data: 
                 existing_data[token].extend(postings)
             else: 
                 existing_data[token] = postings
 
+        # write index to file
         with open(index_file, "w", encoding="utf-8") as f:
             json.dump(existing_data, f, indent=4)
+
+    def __dump_to_disk(self): 
+        """
+        Saves in memory partial inverted index and doc_id map to
+        disk, then clears memory. 
+        """
+        self.__save_index_to_disk()
+        self.__save_doc_id_map_to_disk()
+        self.index.clear()
+        self.doc_id_map.clear()
+        self.doc_count = 0 
+        gc.collect()
 
     def __merge_from_disk(self, query_tokens):
         """Loads only relevant part of index from disk for a given query."""
@@ -185,11 +203,14 @@ class InvertedIndex:
     def __lemmatize_tokens(tokens: list[str]) -> list[str]:
         return [lemmatizer.lemmatize(token) for token in tokens]
 
-    def __stem_tokens(tokens: list[str]) -> list[str]: 
-        return [stemmer.stem(token) for token in tokens if re.match(r"^[a-zA-Z]+$", token)]
+    def __stem_tokens(tokens: list[str]) -> list[str]:
+        """Apply porters stemmer to tokens"""
+        return [stemmer.stem(token) for token in tokens]
 
     def __tokenize_text(text: str) -> list[str]:
-        return word_tokenize(text)
+        """Use nltk to tokenize text."""
+        tokens =  word_tokenize(text)
+        return [token for token in tokens if re.match(r"^[a-zA-Z]+$", token)]
         # return tokenizer.tokenize(text)
 
     def __extract_text_from_html_content(self, content: str) -> list[str]: 
