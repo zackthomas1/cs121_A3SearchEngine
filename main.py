@@ -1,16 +1,7 @@
-import os
-import json
-import shelve
 import nltk
-from nltk.tokenize import RegexpTokenizer
-from nltk.tokenize import word_tokenize
-from nltk.stem import PorterStemmer
-from nltk.stem import WordNetLemmatizer
 from argparse import ArgumentParser
-from bs4 import BeautifulSoup
-from collections import Counter
-from utils import clean_url, get_logger
 from inverted_index import InvertedIndex
+from utils import get_logger
 
 # create logger
 logger = get_logger("MAIN")
@@ -30,3 +21,4 @@ if __name__ == "__main__":
 
     index = InvertedIndex()
     index.build_index(args.rootdir)
+    index.build_master_index()
