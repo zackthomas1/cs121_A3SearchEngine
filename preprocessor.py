@@ -21,7 +21,7 @@ class Preprocessor:
         self.root: str = rootdir                   # path to root directory
         self.data: Dict[str, Dict[str, str]] = {}  # dictionary data of all JSON file
         self.loaded: bool = False                  # True if data is loaded
-        self.re_alnum = re.compile(r'\b[a-z0-9]+\b')
+        self.re_alnum = re.compile(r'[a-z0-9]+')
         self.stemmer = PorterStemmer()             # Porter Stemmer from NLTK package
 
 
