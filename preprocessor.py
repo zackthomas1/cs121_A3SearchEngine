@@ -6,6 +6,7 @@ from typing import Dict, List, Counter
 import nltk
 from nltk.tokenize import word_tokenize 
 from nltk.stem import PorterStemmer
+import re
 
 
 # punkt is a tokenization model in the NLTK data package
@@ -20,6 +21,7 @@ class Preprocessor:
         self.root: str = rootdir                   # path to root directory
         self.data: Dict[str, Dict[str, str]] = {}  # dictionary data of all JSON file
         self.loaded: bool = False                  # True if data is loaded
+        self.re_alnum = re.compile(r'\b[a-z0-9]+\b')
         self.stemmer = PorterStemmer()             # Porter Stemmer from NLTK package
 
 
@@ -80,8 +82,11 @@ class Preprocessor:
         Porter Stemmer:
             https://www.nltk.org/howto/stem.html#unit-tests-for-the-porter-stemmer
         """
-        words = word_tokenize(text.lower())  # 1. Use NLTK to tokenize all lowercased text
-        return [self.stemmer.stem(word) for word in words]  # 2. Stem them using PorterStemmer
+        #words = word_tokenize(text.lower())  # 1. Use NLTK to tokenize all lowercased text
+        text = text.lower()
+        words = self.re_alnum.findall(text)  # Use compiled re expression to tokenize alphanumeric
+        return list(map(self.stemmer.stem, words))  # Time and memory efficient than list comprehension
+        # return [self.stemmer.stem(word) for word in words]  # 2. Stem them using PorterStemmer
     
 
     def get_tok_freq(self, text: str) -> Counter:
