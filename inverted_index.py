@@ -1,9 +1,8 @@
 import os
-import re
 import gc
 import json
 import nltk
-import shelve
+from nltk.corpus import stopwords
 from nltk.tokenize import RegexpTokenizer
 from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
@@ -12,8 +11,8 @@ from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
 from utils import clean_url, is_non_html_extension, get_logger
 
-
 # Constants 
+STOPWORDS = set(stopwords.words('english'))
 DOC_THRESHOLD = 250 # Dump index to latest JSON file every 100 docs
 # NEW_FILE_THRESHOLD = 1000   # Create new index file every 1000 docs
 DOC_ID_DIR = "index/doc_id_map"
@@ -208,9 +207,9 @@ class InvertedIndex:
         return [stemmer.stem(token) for token in tokens]
 
     def __tokenize_text(text: str) -> list[str]:
-        """Use nltk to tokenize text."""
+        """Use nltk to tokenize text. Remove stop words and non alphanum"""
         tokens =  word_tokenize(text)
-        return [token for token in tokens if re.match(r"^[a-zA-Z]+$", token)]
+        return [token for token in tokens if token not in STOPWORDS]
         # return tokenizer.tokenize(text)
 
     def __extract_text_from_html_content(self, content: str) -> list[str]: 

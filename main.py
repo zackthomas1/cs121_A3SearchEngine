@@ -15,6 +15,7 @@ if __name__ == "__main__":
     
     # Download NLTK resources
     nltk.download('punkt_tab')
+    nltk.download('stopwords')
 
     index = InvertedIndex()
     index.build_index(args.rootdir)

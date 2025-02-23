@@ -41,6 +41,6 @@ def unique_tokens_count():
 
 if __name__ == "__main__":
     index = InvertedIndex()
-    # index.build_master_index()
-    print(tokens_count())
-    print(unique_tokens_count())
+    index.build_master_index()
+    print(f"Total number of tokens: {tokens_count()}")
+    print(f"Unique tokens: {unique_tokens_count()}")
