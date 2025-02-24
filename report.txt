@@ -4,9 +4,9 @@
     because the either the json file no data or the url ended in a non-html extension.
 
 2. Number of [unique] tokens
-    There are 244,084 total tokens.
-    There are 65,266 unique tokens in the index. These are tokens that appear only once in a single document.
+    There are 2,166,004 total tokens.
+    There are 1,353,229 unique tokens in the index. These are tokens that appear only once in a single document.
 
 3. Total size (in KB) of index on disk.
-    The total size of the master index .json file on disk is 454,633 KB. 
-    The size of all the partial index .json files on disk is 493,803 KB
+    The total size of the master index .json file on disk is 839,839 KB. 
+    The size of all the partial index .json files on disk is 934,518 KB

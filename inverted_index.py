@@ -1,4 +1,5 @@
 import os
+import re
 import gc
 import json
 import nltk
@@ -209,7 +210,7 @@ class InvertedIndex:
     def __tokenize_text(text: str) -> list[str]:
         """Use nltk to tokenize text. Remove stop words and non alphanum"""
         tokens =  word_tokenize(text)
-        return [token for token in tokens if token not in STOPWORDS]
+        return [token for token in tokens if re.match(r"^[a-zA-Z0-9]+$", token) and token not in STOPWORDS]
         # return tokenizer.tokenize(text)
 
     def __extract_text_from_html_content(self, content: str) -> list[str]: 
