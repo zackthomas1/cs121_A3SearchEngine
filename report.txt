@@ -1,6 +1,5 @@
-
 1. Number of documents
-    55,392 documents were indexed. Of those 449 documents were skipped
+    55,393 documents were indexed. Of those 449 documents were skipped
     because the either the json file no data or the url ended in a non-html extension.
 
 2. Number of [unique] tokens
