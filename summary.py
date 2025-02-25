@@ -11,6 +11,9 @@ from inverted_index import PARTIAL_INDEX_DIR, MASTER_INDEX_DIR, MASTER_INDEX_FIL
 #   Total size (in KB) of index on disk.
 
 def tokens_count():
+    """
+    Returns the total number of tokens
+    """
     # Load master index if it exists
     if os.path.exists(MASTER_INDEX_FILE):
         with open(MASTER_INDEX_FILE, "r", encoding="utf-8") as f:
