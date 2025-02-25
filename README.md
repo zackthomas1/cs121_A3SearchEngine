@@ -40,14 +40,22 @@ $ ```deactivate```
     "configurations": [
 
         {
-            "name": "Python Debugger: Current File with Arguments",
+            "name": "Python Debug: main.py with restart arg",
             "type": "debugpy",
             "request": "launch",
             "program": "main.py",
             "console": "integratedTerminal",
             "args": [
-                "developer/Dev"
+                "--rootdir", "developer/DEV", "--restart"
             ]
+        },
+        {
+            "name": "Python Debug: summary_report.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "summary_report.py",
+            "console": "integratedTerminal",
+            "args": []
         }
     ]
 }

@@ -1,5 +1,6 @@
+__pycache__/
+developer/
+logs/
+index/
 .venv/
 .vscode/
-developer/
-.vscode/
-__pycache__/
