@@ -1,3 +1,12 @@
 .venv/
 .vscode/
 developer/"__pycache__/" 
+RESULT_grand_final_RESULT.txt
+RESULT_grand_final_index.json
+__pycache__/
+output/
+partial_index/
+partial_index_trial1 (token contains symbols)/
+partial_index_trial2/
+partial_index_trial3 (just before changing code)/
+partial_index_trial4 (after change 1st trial)/
