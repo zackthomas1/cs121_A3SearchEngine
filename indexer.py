@@ -10,7 +10,7 @@ class InvertedIndex:
     """
     InvertedIndex that represents {token: Posting}
     """
-    def __init__(self, threshold=10000):
+    def __init__(self, threshold=100000):
         self.indexDict = dict()  # {token: Posting}
         self.threshold = threshold      # threshold for RAM->DISC conversion (NOTE: can declare as global variable or constant)
         self.size = 0
@@ -70,9 +70,6 @@ class InvertedIndex:
         except Exception as e:
             print(f"[ERROR] {type(e)}: Partialize failed for {filename}")
 
-        #self.__serialize(filepath)
-        # TODO: Figure out what else we need to do other than serializing
-
     
     def clear_indexDict(self) -> None:
         for posting in self.indexDict.values():
@@ -103,7 +100,26 @@ class InvertedIndex:
                         final_index[token] = Posting.convert_to_posting_object(post_info)
 
         self.indexDict = final_index
+
+        # with open("RESULT_grand_final_index.txt", "w") as f:
+        #     json.dump(self.indexDict, f)
+
+        self.writeOnFile("RESULT_grand_final_index.json", "RESULT_grand_final_RESULT.txt")
+
         print(f"[SYSMSG] Successfully Merged All Index Files {0}-{i}")
+
+
+    def writeOnFile(self, finalIndexPath: str, statPath: str) -> None:
+        with open(finalIndexPath, "w") as f:
+            for tok, pos in self.indexDict.items():
+                json.dump({tok: pos.get_posting()}, f)
+
+        with open(statPath, "w") as f:
+            print(f"Total number of tokens: {self.getTokenCount()}", file=f)
+
+
+    def getTokenCount(self) -> int:
+        return len(self.indexDict)
 
 
     # def __serialize(self, filepath: str) -> bool:

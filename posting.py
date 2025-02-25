@@ -31,7 +31,6 @@ class Posting:
             self.posting[id] = freq
         else:
             self.posting[id] += freq
-            # NOTE: Otherwise, consider rasing error depending on implementation
         self.size += 1
 
 
