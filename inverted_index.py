@@ -36,6 +36,7 @@ class InvertedIndex:
         # self.current_index_file = self.get_latest_index_file()
         self.doc_id_map = {} # map file names to docid
         self.logger = get_logger("INVERTED_INDEX")
+        self.re_alnum = re.compile(r"^[a-z0-9]+$")
 
         # Initializes directories for index storage
         os.makedirs(DOC_ID_DIR, exist_ok=True) 
@@ -210,10 +211,11 @@ class InvertedIndex:
         """Apply porters stemmer to tokens"""
         return [stemmer.stem(token) for token in tokens]
 
-    def __tokenize_text(text: str) -> list[str]:
+    def __tokenize_text(self, text: str) -> list[str]:
         """Use nltk to tokenize text. Remove stop words and non alphanum"""
-        tokens =  word_tokenize(text)
-        return [token for token in tokens if re.match(r"^[a-zA-Z0-9]+$", token) and token not in STOPWORDS]
+        tokens =  word_tokenize(text.lower())
+        # NOTE: Why not using built-in ".isalnum()" which is faster?
+        return [token for token in tokens if self.re_alnum.match(token) and token not in STOPWORDS]
         # return tokenizer.tokenize(text)
 
     def __extract_text_from_html_content(self, content: str) -> list[str]: 
