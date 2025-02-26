@@ -254,4 +254,44 @@ class InvertedIndex:
             return None 
         except Exception as e:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
-            return None 
+            return None
+        
+        
+    def __calculate_tfscore(self, token: str, text: str):
+        """
+        Call this function in loop for all documents like below.
+            tfidf_table = 
+            For text[contents] in all document files:
+                for each token in each text[contents]:
+                    tf = __calculate_tfscore(token, text)
+
+        """
+        text = self.__tokenize_text(text)
+        tokenToFind = word_tokenize(token.lower())
+
+
+    def __calculate_idfscore(self):
+        pass
+
+
+    
+    """
+    # Pseudocode for tf-idf processing
+    invIndex = InvertedIndex()
+    number_of_doc_containing_token = {token: num_TinD}  // num_TinD: number of documents that contain token
+    idf_score = {token: idf_score}
+
+    for file in all_files:
+        for token in text:  // text = file.extract["Content"]
+            during building invIndex, save tf_score instead of frequency:
+                tf_score = number_of_token_in_text / number_of_all_words_in_text
+        
+        if token in text:
+            number_of_doc_containing_token[token] += 1
+    
+    for token, number in number_of_doc_containing_token:
+        idf_val = math.log(CONST_TOTAL_NUM_DOC / (1 + number))
+        idf_score[token] = idf_val    // Approach 1: Having separate invIndex and idfTable
+        invIndex[token][0] = idf_val  // Approach 2: Change data structure so that it saves idf value in InvertedIndex
+                                      //    Final Structure:  {token: [ idf, [ [docID, tf], ... ] ]}
+    """
