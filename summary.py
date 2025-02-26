@@ -1,8 +1,8 @@
 import os
 import json
 from inverted_index import InvertedIndex
-from inverted_index import PARTIAL_INDEX_DIR, MASTER_INDEX_DIR, MASTER_INDEX_FILE
-
+from inverted_index import PARTIAL_INDEX_DIR, MASTER_INDEX_DIR, MASTER_INDEX_FILE, DOC_ID_DIR, DOC_ID_MAP_FILE
+from typing import List
 # Code Report: 
 # A table with assorted numbers pertaining to your index. 
 # Contains:
@@ -43,7 +43,7 @@ def unique_tokens_count():
     return len(list(unique_tokens))
 
 #TODO: WIP
-def top_n_result_urls(query: str, n: int) -> list:
+def top_n_result_urls(query: str, n: int) -> List[str]:
     """
     Given a query, pulls and returns the top n Urls for each from an already
     built inverted index.
@@ -77,12 +77,22 @@ def top_n_result_urls(query: str, n: int) -> list:
 
     # TODO: tf-idf implementation would be somewhere here!
     # Sort the merged results by their "quality" [# of occurances]
-    merged_results = sorted(merged_results.items(), key = lambda kv: (kv[1], kv[0]))
+    merged_results = sorted(merged_results.items(), key=lambda kv: (-kv[1], kv[0]))
 
-    doc_list = []
+    # Get the top n URLS
+    id_map = {}
+
+    if os.path.exists(DOC_ID_MAP_FILE):
+        with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
+            id_map = json.load(f)
+
+    ordered_url_list = []
     for i in range(n):
-        doc_list.append(merged_results[i])
-    
+        doc_id = merged_results[i][0]
+        ordered_url_list.append(id_map[doc_id])
+
+    return ordered_url_list
+
 
 def print_token_data():
     """
