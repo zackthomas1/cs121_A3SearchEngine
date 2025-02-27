@@ -11,7 +11,7 @@ https://www.ics.uci.edu/~algol/teaching/informatics141cs121w2022/a3files/develop
 Creates lightweight python environment to manage project dependecies
 
 Create virtual environment (bash)\
-$ ```python3 -m venv .venv```
+$ ```python -m venv .venv```
 
 Activate virtual environment (bash)\
 $ ```source .venv/bin/activate```
@@ -40,14 +40,22 @@ $ ```deactivate```
     "configurations": [
 
         {
-            "name": "Python Debugger: Current File with Arguments",
+            "name": "Python Debug: main.py with restart arg",
             "type": "debugpy",
             "request": "launch",
             "program": "main.py",
             "console": "integratedTerminal",
             "args": [
-                "developer/Dev"
+                "--rootdir", "developer/DEV", "--restart"
             ]
+        },
+        {
+            "name": "Python Debug: summary_report.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "summary_report.py",
+            "console": "integratedTerminal",
+            "args": []
         }
     ]
 }
