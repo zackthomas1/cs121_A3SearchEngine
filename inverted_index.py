@@ -28,14 +28,17 @@ stemmer = PorterStemmer()
 tokenizer = RegexpTokenizer(r'\w+')
 
 class InvertedIndex: 
-    def __init__(self): 
+    def __init__(self):
+        """ Prepares to Index data by initializing storage directories and counter/keying variables. """
         self.index = defaultdict(list)
         self.doc_count = 0
         # self.total_doc_count = 0
         # self.current_index_file = self.get_latest_index_file()
         self.doc_id_map = {} # map file names to docid
         self.logger = get_logger("INVERTED_INDEX")
-        os.makedirs(DOC_ID_DIR, exist_ok=True)  # Ensure index storage directory exist
+
+        # Initializes directories for index storage
+        os.makedirs(DOC_ID_DIR, exist_ok=True) 
         os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
         os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
 
