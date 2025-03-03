@@ -29,7 +29,6 @@ if __name__ == "__main__":
             for count, url in enumerate(results, start=1):
                 print(f"{count}: {url}")
             end_time = time.perf_counter() * 1000
-            print(f'Example results: {results[:5]}')
             logger.info(f"Completed search: {end_time - start_time:.0f} ms")
 
     print("'quit' detected, exiting...")
