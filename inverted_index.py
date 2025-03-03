@@ -87,8 +87,7 @@ class InvertedIndex:
     
     def search(self, query): 
         self.logger.info(f"Searching for query tokens in inverted index: {query}")
-        tokens = InvertedIndex.__stem_tokens(InvertedIndex.__tokenize_text(query))
-
+        tokens = InvertedIndex.__stem_tokens(self.__tokenize_text(query))
         return self.__merge_from_disk(tokens)
 
     def __process_document(self, file_path, doc_id):
@@ -199,15 +198,15 @@ class InvertedIndex:
 
         return merged_index
 
-    def __construct_token_freq_counter(tokens) -> Counter:
+    def __construct_token_freq_counter(tokens) -> Counter:  # NOTE: This is Not a member function
         counter = Counter()
         counter.update(tokens)
         return counter
 
-    def __lemmatize_tokens(tokens: list[str]) -> list[str]:
+    def __lemmatize_tokens(tokens: list[str]) -> list[str]:    # NOTE: Not member function
         return [lemmatizer.lemmatize(token) for token in tokens]
 
-    def __stem_tokens(tokens: list[str]) -> list[str]:
+    def __stem_tokens(tokens: list[str]) -> list[str]:    # NOTE: Not member function
         """Apply porters stemmer to tokens"""
         return [stemmer.stem(token) for token in tokens]
 
