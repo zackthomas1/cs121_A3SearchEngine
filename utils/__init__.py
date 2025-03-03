@@ -4,6 +4,10 @@ import logging
 from urllib.parse import urlparse
 
 def clean_url(url: str) -> str:
+    """
+    Given a url string, returns the normalized url.
+    normalize: to standardize or make consistent (remove trailing slashes / index.html default pages)
+    """
     parsed_url = urlparse(url)
     if 'index' in parsed_url.path:
         return normalize_url(parsed_url._replace(path="", query="", fragment="").geturl())

@@ -18,8 +18,6 @@ if __name__ == "__main__":
     nltk.download('stopwords')
 
     index = InvertedIndex()
-    index.build_index(args.rootdir)
-    index.build_master_index()
-
-    print(index.search("Iftekhar Ahmed"))
+    # index.build_index(args.rootdir)
+    # index.build_master_index()
     

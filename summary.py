@@ -87,6 +87,7 @@ def top_n_result_urls(query: str, n: int, index: InvertedIndex, logger) -> List[
         with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
             id_map = json.load(f)
 
+    logger.info(f'Info?: {merged_results}')
     # Get and return the top N urls
     ordered_url_list = set()
 
