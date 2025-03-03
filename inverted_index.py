@@ -11,6 +11,7 @@ from nltk.stem import WordNetLemmatizer
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
 from utils import clean_url, is_non_html_extension, get_logger
+from typing import Dict, List, Tuple
 
 # Constants 
 STOPWORDS = set(stopwords.words('english'))
@@ -30,9 +31,10 @@ tokenizer = RegexpTokenizer(r'\w+')
 class InvertedIndex: 
     def __init__(self):
         """ Prepares to Index data by initializing storage directories and counter/keying variables. """
-        self.index = defaultdict(list)
+        self.index: Dict[List[Tuple[int, int]]] = defaultdict(list)  # {token: [(docid, tf_score)]}
         self.doc_count = 0
-        # self.total_doc_count = 0
+        self.total_doc_count = 0  # total number of documents
+        self.token_in_doc_count: Dict[str, int] = {}  # contains total number of documents where token (key) appears
         # self.current_index_file = self.get_latest_index_file()
         self.doc_id_map = {} # map file names to docid
         self.logger = get_logger("INVERTED_INDEX")
@@ -91,11 +93,11 @@ class InvertedIndex:
         return self.__merge_from_disk(tokens)
 
     def __process_document(self, file_path, doc_id):
+        # Read File to Process On
         data = self.__read_json_file(file_path)
         if not data:
             self.logger.warning(f"Skipping empty JSON file: {file_path}")
             return
-        
         url = clean_url(data['url'])
         if is_non_html_extension(url):
             self.logger.warning(f"Skipping url with non html extension")
@@ -104,6 +106,7 @@ class InvertedIndex:
         #     self.logger.warning(f"Skipping non-unique Url: {os.path.join(root, file)} - {url}")
         #     return
 
+        # Text Extraction
         text = self.__extract_text_from_html_content(data['content'])
         if not text: 
             self.logger.warning(f"Skipping empty HTML text content: {file_path}")
@@ -111,18 +114,24 @@ class InvertedIndex:
 
         self.__update_doc_id_map(doc_id, url)
 
+        # Text Preprocessing (Tokenize & Stem) and Conut Token Frequency
         # self.logger.info(f"Tokenizing document content")
-        tokens = InvertedIndex.__stem_tokens(InvertedIndex.__tokenize_text(text))
-        token_freq = InvertedIndex.__construct_token_freq_counter(tokens)
+        tokens: List[str] = InvertedIndex.__stem_tokens(self.__tokenize_text(text))
+        token_freq: Dict[str, int] = InvertedIndex.__construct_token_freq_counter(tokens)
 
         # self.logger.info(f"Updating inverted index")
-        for token, freq in token_freq.items(): 
-            self.index[token].append((doc_id, freq))
+        
+        # Inverted Index Construction
+        word_count = len(tokens)  # Get total number of words in the current document
+        for token, freq in token_freq.items():
+            tf_score = freq / word_count  # Calculate tf score: (word freq in cur doc / word cnt of cur doc)
+            self.index[token].append((doc_id, tf_score))
 
-        self.doc_count += 1
-        # self.total_doc_count += 1
+        # Update Counters
+        self.doc_count += 1        # Used for Partial Indexing
+        self.total_doc_count += 1  # Used for IDF score calculation
 
-        # If threshould reached, store partial index and reset RAM
+        # Partial Indexing: If threshold is reached, store partial index and reset RAM
         if self.doc_count >= DOC_THRESHOLD: 
             self.__dump_to_disk()
 
@@ -203,10 +212,10 @@ class InvertedIndex:
         counter.update(tokens)
         return counter
 
-    def __lemmatize_tokens(tokens: list[str]) -> list[str]:    # NOTE: Not member function
+    def __lemmatize_tokens(tokens: list[str]) -> list[str]:    # NOTE: This is Not a member function
         return [lemmatizer.lemmatize(token) for token in tokens]
 
-    def __stem_tokens(tokens: list[str]) -> list[str]:    # NOTE: Not member function
+    def __stem_tokens(tokens: list[str]) -> list[str]:    # NOTE: This is Not a member function
         """Apply porters stemmer to tokens"""
         return [stemmer.stem(token) for token in tokens]
 
