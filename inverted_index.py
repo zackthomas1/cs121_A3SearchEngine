@@ -19,9 +19,9 @@ import numpy as np
 STOPWORDS = set(stopwords.words('english'))
 DOC_THRESHOLD = 250 # Dump index to latest JSON file every 100 docs
 # NEW_FILE_THRESHOLD = 1000   # Create new index file every 1000 docs
-DOC_ID_DIR = "index/test_doc_id_map"            # "index/doc_id_map"
-PARTIAL_INDEX_DIR = "index/test_partial_index"  # "index/partial_index"
-MASTER_INDEX_DIR = "index/test_master_index"    # "index/master_index"
+DOC_ID_DIR = "index/doc_id_map"            # "index/doc_id_map"
+PARTIAL_INDEX_DIR = "index/partial_index"  # "index/partial_index"
+MASTER_INDEX_DIR = "index/master_index"    # "index/master_index"
 MASTER_INDEX_FILE = os.path.join(MASTER_INDEX_DIR, "master_index.json")
 DOC_ID_MAP_FILE = os.path.join(DOC_ID_DIR, "doc_id_map.json")
 
@@ -111,7 +111,7 @@ class InvertedIndex:
 
         self.logger.info(f"Master index built successfully and saved to {MASTER_INDEX_FILE}")
     
-    def search(self, query: str) -> dict[str, list[tuple[int, int]]]:
+    def boolean_search(self, query: str) -> dict[str, list[tuple[int, int]]]:
         """
         Parameters:
         query (str): a query string 
@@ -119,9 +119,31 @@ class InvertedIndex:
         Returns:
         dict[str, list[tuple[int, int]]]: Inverted index containing only tokens formed from the query string
         """
-        self.logger.info(f"Searching for query tokens in inverted index: {query}")
+        self.logger.info(f"Searching inverted index for query: {query}")
+        
         tokens = InvertedIndex.__stem_tokens(self.__tokenize_text(query))
-        return self.__merge_from_disk(tokens)
+        query_token_index = self.__merge_from_disk(tokens)
+
+        merged_results = {}
+
+        # AND boolean implementation: merge docId results on token occurances
+        for token in query_token_index:
+            self.logger.info(f"\tProcessing token: {token}")
+            # Initialize 'merged_results' if empty
+            if not merged_results:
+                merged_results = {docId: token_freq for docId, token_freq in query_token_index[token]}
+
+            # Find and merge relevent documents
+            else:
+                relevent_documents = query_token_index[token]
+
+                for docId, token_freq in relevent_documents:
+                    if docId in merged_results:
+                        merged_results[docId] += token_freq
+
+        # TODO: tf-idf implementation would be somewhere here!
+        # Sort the merged results by their "quality" [# of token frequency]
+        return sorted(merged_results.items(), key=lambda kv: (-kv[1], kv[0]))
 
     def __process_document(self, file_path: str, doc_id: int):
         """
