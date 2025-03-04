@@ -1,0 +1,24 @@
+        Query: cristina lopes
+         1. http://mondego.ics.uci.edu
+         2. https://www.informatics.uci.edu/close-to-the-trenches
+         3. https://www.ics.uci.edu/~sjavanma
+         4. https://www.ics.uci.edu/~hsajnani
+         5. https://www.ics.uci.edu/community/news/features/view_feature
+        Query: machine learning
+         1. https://cml.ics.uci.edu/category/aiml
+         2. https://www.ics.uci.edu/~pazzani/Publications/APubs.html
+         3. https://cml.ics.uci.edu/category/aiml/page/2
+         4. https://www.ics.uci.edu
+         5. https://www.ics.uci.edu/~pazzani/Publications/OldPublications.html
+        Query: ACM
+         1. https://www.ics.uci.edu/~eppstein/bibs/eppstein.html
+         2. https://www.ics.uci.edu/~dan/class/267P/datasets/calgary/bib
+         3. https://www.ics.uci.edu/~eppstein/pubs/all.html
+         4. https://www.ics.uci.edu/~mjcarey/MJCarey_Publications.html
+         5. https://www.ics.uci.edu/~eppstein/pubs/geom-all.html
+        Query: master of software engineering
+         1. https://www.ics.uci.edu/~kay/courses/h22/hw/DVD-random.txt
+         2. https://www.informatics.uci.edu/very-top-footer-menu-items/people
+         3. https://www.ics.uci.edu/~neno/vita/vita.html
+         4. https://www.ics.uci.edu/~pattis/quotations.html
+         5. https://www.ics.uci.edu/~kay/courses/h22/hw/DVD.txt
