@@ -32,7 +32,10 @@ tokenizer = RegexpTokenizer(r'\w+')
 
 class InvertedIndex: 
     def __init__(self):
-        """ Prepares to Index data by initializing storage directories and counter/keying variables. """
+        """ 
+        Prepares to Index data by initializing storage directories and counter/keying variables.
+        """
+        
         self.index: Dict[str, List[Tuple[int, float]]] = defaultdict(list)  # {token: [(docid, tf_score)]}
         self.doc_count = 0
         self.total_doc_count = 0  # total number of documents
@@ -48,10 +51,11 @@ class InvertedIndex:
         os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
         os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
 
-    def build_index(self, folder_path): 
+    def build_index(self, folder_path: str) -> None: 
         """
         Process all JSON files in folder and build index.
         """
+
         doc_id = 0
         for root, dirs, files in os.walk(folder_path):
             for file_name in files:
@@ -73,8 +77,11 @@ class InvertedIndex:
         for token, count in self.idf_scores.items():
             self.idf_scores[token] = np.float32(round(np.log(self.total_doc_count / (count + 1)), 4))
 
-    def build_master_index(self):
-        """Combines all partial indexes into a single master index while preserving order."""
+    def build_master_index(self) -> None:
+        """
+        Combines all partial indexes into a single master index while preserving order.
+        """
+        
         self.logger.info(f"Building Master index...")
 
         master_index = defaultdict(list)
@@ -104,12 +111,29 @@ class InvertedIndex:
 
         self.logger.info(f"Master index built successfully and saved to {MASTER_INDEX_FILE}")
     
-    def search(self, query): 
+    def search(self, query: str) -> dict[str, list[tuple[int, int]]]:
+        """
+        Parameters:
+        query (str): a query string 
+
+        Returns:
+        dict[str, list[tuple[int, int]]]: Inverted index containing only tokens formed from the query string
+        """
         self.logger.info(f"Searching for query tokens in inverted index: {query}")
         tokens = InvertedIndex.__stem_tokens(self.__tokenize_text(query))
         return self.__merge_from_disk(tokens)
 
-    def __process_document(self, file_path, doc_id):
+    def __process_document(self, file_path: str, doc_id: int):
+        """
+        Takes a file path to a document which stores an html page and updates the inverted index with tokens extracted from text content.
+        Reads the file from disk. Extracts the html content. Updates the doc_id-url map. Tokenize the textual content.
+        Update the inverted index with
+
+        Parameters:
+        file_path (str): The absolute file path to the document in the local file storage system
+        doc_id (int): The unique id for the document at the provided file location 
+        """
+
         # Read File to Process On
         data = self.__read_json_file(file_path)
         if not data:
@@ -156,11 +180,25 @@ class InvertedIndex:
         if self.doc_count >= DOC_THRESHOLD: 
             self.__dump_to_disk()
 
-    def __update_doc_id_map(self, doc_id, url): 
+    def __update_doc_id_map(self, doc_id: int, url: str) -> None:
+        """
+        Updates the document id-url index with the provided doc_id url pair.
+        Document id-url index records which url is associated with each doc_id number
+
+        Parameters:
+        doc_id (int): the unique identifier of the document
+        url (str): url web address of the related document
+
+        Returns:
+        dict[str, list[tuple[int, int]]]
+        """
         self.doc_id_map[doc_id] = url
 
-    def __save_doc_id_map_to_disk(self): 
-        """Saves the Doc_ID-URL mapping to disk as a JSON file"""
+    def __save_doc_id_map_to_disk(self) -> None: 
+        """
+        Saves the Doc_ID-URL mapping to disk as a JSON file
+        """
+
         if os.path.exists(DOC_ID_MAP_FILE):
             with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
                 existing_map = json.load(f)
@@ -174,8 +212,11 @@ class InvertedIndex:
         with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
             json.dump(existing_map, f, indent=4)
 
-    def __save_index_to_disk(self): 
-        """Store current index to JSON file"""
+    def __save_index_to_disk(self) -> None: 
+        """
+        Store current index to JSON file
+        """
+
         self.logger.info("Dumping index to disk")
         
         # Create a new .json partial index file
@@ -202,8 +243,9 @@ class InvertedIndex:
     def __dump_to_disk(self): 
         """
         Saves in memory partial inverted index and doc_id map to
-        disk, then clears memory. 
+        disk, then clears memory.
         """
+
         self.__save_index_to_disk()
         self.__save_doc_id_map_to_disk()
         self.index.clear()
@@ -211,8 +253,16 @@ class InvertedIndex:
         self.doc_count = 0 
         gc.collect()
 
-    def __merge_from_disk(self, query_tokens):
-        """Loads only relevant part of index from disk for a given query."""
+    def __merge_from_disk(self, query_tokens: list[str]) -> dict[str, list[tuple[int, int]]]:
+        """
+        Loads only relevant part of index from disk for a given query.
+        
+        Parameters:
+        query_tokens (list[str]): 
+
+        Returns:
+        dict[str, list[tuple[int, int]]]: inverted index which contains only the query tokens entries from the partial index
+        """
         merged_index = {}
         for file_name in os.listdir(PARTIAL_INDEX_DIR): 
             file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
@@ -228,28 +278,49 @@ class InvertedIndex:
 
         return merged_index
 
-    def __construct_token_freq_counter(tokens) -> Counter:  # NOTE: This is Not a member function
+    def __construct_token_freq_counter(tokens: list[str]) -> Counter:  # NOTE: This is Not a member function
+        """
+        Counts the apparence frequency a token in a list of tokens from a single document
+        
+        Parameters:
+        tokens (list[str]): A list of tokens from a single document
+
+        Returns:
+        Counter: A list of tuple pairs the token string and an integer of the frequency of token in tokens list
+        """
+        
         counter = Counter()
         counter.update(tokens)
         return counter
 
-    def __lemmatize_tokens(tokens: list[str]) -> list[str]:    # NOTE: This is Not a member function
-        return [lemmatizer.lemmatize(token) for token in tokens]
-
-    def __stem_tokens(tokens: list[str]) -> list[str]:    # NOTE: This is Not a member function
-        """Apply porters stemmer to tokens"""
-        return [stemmer.stem(token) for token in tokens]
-
     def __tokenize_text(self, text: str) -> list[str]:
-        """Use nltk to tokenize text. Remove stop words and non alphanum"""
+        """
+        Use nltk to tokenize text. Remove stop words and non alphanum
+        
+        Parameters:
+        text (str): Text content parsed from an html document
+
+        Returns:
+        list[str]: a list of tokens extracted from the text content string
+        """
+
         tokens =  word_tokenize(text.lower())
         # NOTE: Why not using built-in ".isalnum()" which is faster?
         return [token for token in tokens if self.re_alnum.match(token) and token not in STOPWORDS]
         # return tokenizer.tokenize(text)
 
-    def __extract_text_from_html_content(self, content: str) -> list[str]: 
+    def __extract_text_from_html_content(self, content: str) -> str: 
         """
+        Extract the text content from a html content string. Ignores all of the markup and html tags
+        and only returns the text content.
+
+        Parameters:
+        text (str): html content
+
+        Returns:
+        str: A string containing only the textual content from the html document.
         """
+
         try:
             #TODO: Check that the content is html before parsing. Document content may also be xml
 
@@ -269,7 +340,13 @@ class InvertedIndex:
     
     def __read_json_file(self, file_path: str) -> dict[str, str]:
         """
+        Parameters:
+        file_path (str): File path to json document in local file storage
+
+        Returns:
+        dict[str, str]: returns the data stored in the json file as a python dictionary
         """
+
         try: 
             with open(file_path, 'r') as file: 
                 data = json.load(file)
@@ -324,3 +401,29 @@ class InvertedIndex:
         invIndex[token][0] = idf_val  // Approach 2: Change data structure so that it saves idf value in InvertedIndex
                                       //    Final Structure:  {token: [ idf, [ [docID, tf], ... ] ]}
     """
+
+    # Non-member functions
+    def __lemmatize_tokens(tokens: list[str]) -> list[str]:    # NOTE: This is Not a member function
+        """
+        Apply nltk lemmatization algorithm to extracted tokens
+        
+        Parameters:
+        tokens (list[str]): a list of raw tokens 
+
+        Returns:
+        list[str]: a lemmatized list of tokens
+        """
+        return [lemmatizer.lemmatize(token) for token in tokens]
+
+    def __stem_tokens(tokens: list[str]) -> list[str]:    # NOTE: This is Not a member function
+        """
+        Apply porters stemmer to tokens
+        
+        Parameters:
+        tokens (list[str]): a list of raw tokens 
+
+        Returns:
+        list[str]: a lemmatized list of tokens
+        """
+        
+        return [stemmer.stem(token) for token in tokens]
