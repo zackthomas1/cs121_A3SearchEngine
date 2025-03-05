@@ -103,7 +103,7 @@ class InvertedIndex:
 
         return merged_index
     
-    def get_master_index_from_disk() -> dict[str, list[tuple[int, int, int]]]:
+    def get_master_index_from_disk(self) -> dict[str, list[tuple[int, int, int]]]:
         """
         Load master index if it exists
         """
@@ -116,7 +116,7 @@ class InvertedIndex:
 
         return index_data
 
-    def get_doc_id_map_from_disk() -> dict[str, str]:
+    def get_doc_id_map_from_disk(self) -> dict[str, str]:
         """Load the doc_id map to get urls"""
 
         doc_id_map = {}

@@ -69,7 +69,7 @@ def retrive_relevant_urls(query: str, n: int, index: InvertedIndex) -> list[str]
 
 if __name__ == "__main__":
     index = InvertedIndex()
-    index.build_master_index()
+    # index.build_master_index()
 
     # m1 report
     # ---------------------------

@@ -19,17 +19,19 @@ def ranked_boolean_search(query_tokens: list[str], inverted_index: InvertedIndex
     scores = {}
     # AND boolean implementation: merge docId results on token occurances
     for token in query_tokens:
-        if not scores:
-            scores = {doc_id: freq for doc_id, freq, tf in merged_index[token]}
-        else:
-            relevent_documents = merged_index[token]
-            doc_freq = len(relevent_documents)
-            for doc_id, freq, tf in relevent_documents:
-                if doc_id in scores:
-                    # # measures quality of document by the frequency of query tokens
-                    # scores[doc_id] += freq
-                    # measures quality of document by tf-idf score
-                    scores[doc_id] += compute_tf_idf(tf, doc_freq, total_docs)
+        relevent_documents = merged_index[token]
+        doc_freq = len(relevent_documents)
+        for doc_id, freq, tf in relevent_documents:
+            if doc_id in scores:
+                # # measures quality of document by the frequency of query tokens
+                # scores[doc_id] += freq
+                # measures quality of document by tf-idf score
+                scores[doc_id] += compute_tf_idf(tf, doc_freq, total_docs)
+            else: 
+                # # measures quality of document by the frequency of query tokens
+                # scores[doc_id] = freq
+                # measures quality of document by tf-idf score
+                scores[doc_id] = compute_tf_idf(tf, doc_freq, total_docs)
 
     # Sort the merged results by their "quality"
     def sorted_docs(item: tuple[int, int]) -> tuple[int, int]:
