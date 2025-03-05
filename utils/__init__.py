@@ -2,6 +2,12 @@ import re
 import os
 import logging
 from urllib.parse import urlparse
+from nltk.stem import PorterStemmer
+from nltk.stem import WordNetLemmatizer
+
+#
+lemmatizer = WordNetLemmatizer()
+stemmer = PorterStemmer()
 
 def clean_url(url: str) -> str:
     """
@@ -28,7 +34,6 @@ def is_non_html_extension(url: str) -> bool:
     + r"|rm|smil|wmv|swf|wma|zip|rar|gz"
     + r"|img|java|war|sql|mpg|ff|sh|ppsx|py|apk|svg|conf|cpp|fig|cls|ipynb|bam|odp|odc|tsv|nb|bib|z|rpm|ma)$", parsed_url.path.lower())
 
-
 def get_logger(name, filename=None):
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
@@ -47,9 +52,33 @@ def get_logger(name, filename=None):
     logger.addHandler(ch)
     return logger
 
-def normalize_url(url):
+def normalize_url(url: str) -> str:
     """ strips trailing backslash"""
     if url.endswith("/"):
         return url.rstrip("/")
     return url
 
+def lemmatize_tokens(tokens: list[str]) -> list[str]:
+    """
+    Apply nltk lemmatization algorithm to extracted tokens
+    
+    Parameters:
+    tokens (list[str]): a list of raw tokens 
+
+    Returns:
+    list[str]: a lemmatized list of tokens
+    """
+    return [lemmatizer.lemmatize(token) for token in tokens]
+
+def stem_tokens(tokens: list[str]) -> list[str]:
+    """
+    Apply porters stemmer to tokens
+    
+    Parameters:
+    tokens (list[str]): a list of raw tokens 
+
+    Returns:
+    list[str]: a lemmatized list of tokens
+    """
+    
+    return [stemmer.stem(token) for token in tokens]
