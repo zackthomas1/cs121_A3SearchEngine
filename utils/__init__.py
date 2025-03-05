@@ -1,9 +1,17 @@
 import re
 import os
 import logging
+import nltk
 from urllib.parse import urlparse
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
 from nltk.stem import WordNetLemmatizer
+
+
+
+# Constants 
+STOPWORDS = set(stopwords.words('english'))
 
 #
 lemmatizer = WordNetLemmatizer()
@@ -82,3 +90,18 @@ def stem_tokens(tokens: list[str]) -> list[str]:
     """
     
     return [stemmer.stem(token) for token in tokens]
+
+def tokenize_text(text: str) -> list[str]:
+    """
+    Use nltk to tokenize text. Remove stop words and non alphanum
+    
+    Parameters:
+    text (str): Text content parsed from an html document
+
+    Returns:
+    list[str]: a list of tokens extracted from the text content string
+    """
+
+    tokens =  word_tokenize(text.lower())
+    return [token for token in tokens if token.isalnum() and token not in STOPWORDS]
+    # return tokenizer.tokenize(text)
