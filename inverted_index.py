@@ -1,19 +1,14 @@
 import os
-import re
 import gc
 import json
-import nltk
 import math
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
-from utils import clean_url, is_non_html_extension, get_logger, stem_tokens
+from utils import clean_url, is_non_html_extension, get_logger, tokenize_text, stem_tokens
 from typing import Dict, List, Tuple
 from math import log as log_e
 
 # Constants 
-STOPWORDS = set(stopwords.words('english'))
 PARTIAL_INDEX_DOC_THRESHOLD = 250 # Dump index to latest JSON file every 100 docs
 DOC_ID_DIR = "index/doc_id_map"            # "index/doc_id_map"
 PARTIAL_INDEX_DIR = "index/partial_index"  # "index/partial_index"
@@ -31,7 +26,6 @@ class InvertedIndex:
         self.index: Dict[str, List[Tuple[int, float]]] = defaultdict(list)  # {token: [(docid, freq, tf)]}
         self.doc_id_map = {} # {doc_id: url}
         self.doc_count_partial_index = 0
-        self.doc_count_total = 0  # total number of documents
         self.logger = get_logger("INVERTED_INDEX")
 
         # Initializes directories for index storage
@@ -62,10 +56,10 @@ class InvertedIndex:
         """
         Combines all partial indexes into a single master index while preserving order.
         """
-        
-        self.logger.info(f"Building Master index...")
 
         master_index = defaultdict(list)
+
+        self.logger.info(f"Building Master index...")
 
         # Iterate through all partial index files
         for file_name in sorted(os.listdir(PARTIAL_INDEX_DIR)):  # Ensure order is maintained
@@ -85,39 +79,31 @@ class InvertedIndex:
 
         self.logger.info(f"Master index built successfully and saved to {MASTER_INDEX_FILE}")
     
-    def ranked_boolean_search(self, query: str) -> dict[str, list[tuple[int, int]]]:
+    def construct_merged_index_from_disk(self, query_tokens: list[str]) -> dict[str, list[tuple[int, int]]]:
         """
+        Constructs inverted index containing only query tokens from partial inverted index stored on disk
+        
         Parameters:
-        query (str): a query string 
+        query_tokens (list[str]): 
 
         Returns:
-        dict[str, list[tuple[int, int]]]: Inverted index containing only tokens formed from the query string
+        dict[str, list[tuple[int, int]]]: inverted index which contains only the query tokens entries from the partial index
         """
-        self.logger.info(f"Searching inverted index for query: {query}")
-        
-        tokens = stem_tokens(self.__tokenize_text(query))
-        query_token_index = self.__merge_from_disk(tokens)
+        merged_index = {}
+        for file_name in os.listdir(PARTIAL_INDEX_DIR): 
+            file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
+            with open(file_path, "r", encoding="utf-8") as f: 
+                index_part = json.load(f)
 
-        merged_results = {}
+            for token in query_tokens: 
+                if token in index_part: 
+                    if token in merged_index: 
+                        merged_index[token].extend(index_part[token])
+                    else: 
+                        merged_index[token] = index_part[token]
 
-        # AND boolean implementation: merge docId results on token occurances
-        for token in query_token_index:
-            self.logger.info(f"\tProcessing token: {token}")
-            # Initialize 'merged_results' if empty
-            if not merged_results:
-                merged_results = {docId: token_freq for docId, token_freq in query_token_index[token]}
-
-            # Find and merge relevent documents
-            else:
-                relevent_documents = query_token_index[token]
-
-                for docId, token_freq in relevent_documents:
-                    if docId in merged_results:
-                        merged_results[docId] += token_freq
-
-        # Sort the merged results by their "quality" [# of token frequency]
-        return sorted(merged_results.items(), key=lambda kv: (-kv[1], kv[0]))
-
+        return merged_index
+    
     def __process_document(self, file_path: str, doc_id: int):
         """
         Takes a file path to a document which stores an html page and updates the inverted index with tokens extracted from text content.
@@ -140,9 +126,6 @@ class InvertedIndex:
         if is_non_html_extension(url):
             self.logger.warning(f"Skipping url with non html extension")
             return
-        # if not is_unique_url(url):
-        #     self.logger.warning(f"Skipping non-unique Url: {os.path.join(root, file)} - {url}")
-        #     return
 
         # Extract textual content from html content
         text = self.__extract_text_from_html_content(data['content'])
@@ -155,8 +138,8 @@ class InvertedIndex:
 
         # Tokenize text
         # self.logger.info(f"Tokenizing document content")
-        tokens: List[str] = stem_tokens(self.__tokenize_text(text))
-        token_freq: Dict[str, int] = InvertedIndex.__construct_token_freq_counter(tokens)
+        tokens = stem_tokens(tokenize_text(text))
+        token_freq = InvertedIndex.__construct_token_freq_counter(tokens)
 
         # Update the inverted index with document tokens
         # self.logger.info(f"Updating inverted index")
@@ -166,7 +149,6 @@ class InvertedIndex:
 
         # Update counters
         self.doc_count_partial_index += 1       # Used for Partial Indexing
-        self.doc_count_total += 1               # Used for IDF score calculation
 
         # Partial Indexing: If threshold is reached, store partial index and reset RAM
         if self.doc_count_partial_index >= PARTIAL_INDEX_DOC_THRESHOLD: 
@@ -188,7 +170,7 @@ class InvertedIndex:
 
     def __save_doc_id_map_to_disk(self) -> None: 
         """
-        Saves the Doc_ID-URL mapping to disk as a JSON file
+        Saves the doc_id-url mapping to disk as a JSON file
         """
 
         if os.path.exists(DOC_ID_MAP_FILE):
@@ -245,31 +227,6 @@ class InvertedIndex:
         self.doc_count_partial_index = 0 
         gc.collect()
 
-    def __merge_from_disk(self, query_tokens: list[str]) -> dict[str, list[tuple[int, int]]]:
-        """
-        Loads only relevant part of index from disk for a given list of query tokens.
-        
-        Parameters:
-        query_tokens (list[str]): 
-
-        Returns:
-        dict[str, list[tuple[int, int]]]: inverted index which contains only the query tokens entries from the partial index
-        """
-        merged_index = {}
-        for file_name in os.listdir(PARTIAL_INDEX_DIR): 
-            file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
-            with open(file_path, "r", encoding="utf-8") as f: 
-                index_part = json.load(f)
-
-            for token in query_tokens: 
-                if token in index_part: 
-                    if token in merged_index: 
-                        merged_index[token].extend(index_part[token])
-                    else: 
-                        merged_index[token] = index_part[token]
-
-        return merged_index
-
     def __construct_token_freq_counter(tokens: list[str]) -> Counter:  # NOTE: This is Not a member function
         """
         Counts the apparence frequency a token in a list of tokens from a single document
@@ -284,22 +241,6 @@ class InvertedIndex:
         counter = Counter()
         counter.update(tokens)
         return counter
-
-    def __tokenize_text(self, text: str) -> list[str]:
-        """
-        Use nltk to tokenize text. Remove stop words and non alphanum
-        
-        Parameters:
-        text (str): Text content parsed from an html document
-
-        Returns:
-        list[str]: a list of tokens extracted from the text content string
-        """
-
-        tokens =  word_tokenize(text.lower())
-        # NOTE: Why not using built-in ".isalnum()" which is faster?
-        return [token for token in tokens if token.isalnum() and token not in STOPWORDS]
-        # return tokenizer.tokenize(text)
 
     def __extract_text_from_html_content(self, content: str) -> str: 
         """
@@ -359,22 +300,4 @@ class InvertedIndex:
     def __compute_tf(term_freq: int, doc_length: int)->int: 
         return term_freq / doc_length
 
-    @staticmethod
-    def __compute_tf_idf(token: str, doc_id: int) -> int:
-        """
-        Call this function in loop for all documents like below.
-            tfidf_table = 
-            For text[contents] in all document files:
-                for each token in each text[contents]:
-                    tf = __calculate_tfscore(token, text)
-
-        """
-        term_freq = 0
-        doc_freq = 0 
-        doc_length = 0
-        tf = term_freq /  doc_length 
-        total_docs = 0
-        idf = math.log(total_docs / (1+doc_freq))
-
-        return tf * idf
-    
+ 
