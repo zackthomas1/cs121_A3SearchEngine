@@ -1,39 +1,36 @@
 import os
 import json
 from inverted_index import InvertedIndex
-from inverted_index import PARTIAL_INDEX_DIR, MASTER_INDEX_DIR, MASTER_INDEX_FILE, DOC_ID_DIR, DOC_ID_MAP_FILE
-from typing import List
-from utils import get_logger
-# Code Report: 
-# A table with assorted numbers pertaining to your index. 
-# Contains:
-#   Number of documents
-#   Number of [unique] tokens
-#   Total size (in KB) of index on disk.
+from query import tokenize_query, ranked_boolean_search
 
-def tokens_count():
+def count_tokens(index: InvertedIndex) -> int:
     """
-    Returns the total number of tokens
-    """
-    # Load master index if it exists
-    if os.path.exists(MASTER_INDEX_FILE):
-        with open(MASTER_INDEX_FILE, "r", encoding="utf-8") as f:
-            index_data = json.load(f)
-    else:
-        index_data = {}
+    Counts total number of tokens in inverted index
+    
+    Parameters:
+    index (InvertedIndex): 
 
+    Returns:
+    int: number of tokens in inverted index
+    """
+
+    index_data = index.get_master_index_from_disk()
     return len(index_data.keys())
 
-def unique_tokens_count():
-    """Returns tokens that appear only once in a single document."""
+def count_unique_tokens(index: InvertedIndex) -> int:
+    """
+    Counts tokens that appear only once in a single document.
+    
+    Parameters:
+    index (InvertedIndex): 
+
+    Returns:
+    int: tokens that appear only once in a single document
+    """
+
     unique_tokens = set()
 
-    # Load master index if it exists
-    if os.path.exists(MASTER_INDEX_FILE):
-        with open(MASTER_INDEX_FILE, "r", encoding="utf-8") as f:
-            index_data = json.load(f)
-    else:
-        index_data = {}
+    index_data = index.get_master_index_from_disk()
 
     # Iterate through all tokens
     for token, postings in index_data.items():
@@ -43,7 +40,7 @@ def unique_tokens_count():
 
     return len(list(unique_tokens))
 
-def top_n_result_urls(query: str, n: int, index: InvertedIndex) -> List[str]:
+def retrive_relevant_urls(query: str, n: int, index: InvertedIndex) -> list[str]:
     """
     Given a query, pulls and returns the top n Urls for each from an already
     built inverted index.
@@ -55,35 +52,31 @@ def top_n_result_urls(query: str, n: int, index: InvertedIndex) -> List[str]:
     
     {'ahm': [[111, 1], [238, 2], [499, 1], [4360, 1], [5006, 4], [592, 3], [686, 1], [744, 1], [745, 1], [5013, 2], [5030, 2], [5035, 2], [5038, 2], [5047, 6], [5051, 2], [5095, 2], [5118, 2], [5138, 2], [835, 1], [1110, 1], [1133, 1]]}
     """
-    ordered_results = index.boolean_search(query)
-    
-    # Load the docId map to get URLS
-    id_map = {}
-    if os.path.exists(DOC_ID_MAP_FILE):
-        with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
-            id_map = json.load(f)
+
+    query_tokens = tokenize_query(query)
+    ranked_results = ranked_boolean_search(query_tokens, index)
+    ranked_results = ranked_results[:n]
+
+    # Load the doc_id map to get urls
+    doc_id_url_map = index.get_doc_id_map_from_disk()
 
     # Get and return the top N urls
-    ordered_url_list = set()
+    ranked_urls = set()
+    for result in ranked_results:
+        doc_id, score = result
+        url = doc_id_url_map[str(doc_id)]
+        ranked_urls.add(url)
 
-    num_index = 0
-    while len(ordered_url_list) < n:
-        if num_index > len(ordered_results):
-            break
-        doc_id = ordered_results[num_index][0]
-        ordered_url_list.add(id_map[str(doc_id)])
-        num_index += 1
-
-    return list(ordered_url_list)
+    return list(ranked_urls)
 
 if __name__ == "__main__":
     index = InvertedIndex()
-    #index.build_master_index()
+    # index.build_master_index()
 
     # m1 report
     # ---------------------------
-    # print(f"Total number of tokens: {tokens_count()}")
-    # print(f"Unique tokens: {unique_tokens_count()}")
+    # print(f"Total number of tokens: {count_tokens(index)}")
+    # print(f"Unique tokens: {count_unique_tokens(index)}")
 
     # m2 report
     # ---------------------------
@@ -96,6 +89,6 @@ if __name__ == "__main__":
     print(f"Top {N_RESULTS} Query Results:")
     for query in queries:
         print(f"\tQuery: {query}")
-        top_query_results = top_n_result_urls(query, N_RESULTS, index)
+        top_query_results = retrive_relevant_urls(query, N_RESULTS, index)
         for ranked_pos, url in enumerate(top_query_results, start=1):
             print(f"\t {ranked_pos}. {url}")
