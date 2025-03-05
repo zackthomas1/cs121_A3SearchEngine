@@ -1,12 +1,10 @@
 import os
 import gc
 import json
-import math
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
 from utils import clean_url, is_non_html_extension, get_logger, tokenize_text, stem_tokens
-from typing import Dict, List, Tuple
-from math import log as log_e
+
 
 # Constants 
 PARTIAL_INDEX_DOC_THRESHOLD = 250 # Dump index to latest JSON file every 100 docs
@@ -23,7 +21,7 @@ class InvertedIndex:
         Prepares to Index data by initializing storage directories and counter/keying variables.
         """
         
-        self.index: Dict[str, List[Tuple[int, float]]] = defaultdict(list)  # {token: [(docid, freq, tf)]}
+        self.index: dict[str, list[tuple[int, float]]] = defaultdict(list)  # {token: [(docid, freq, tf)]}
         self.doc_id_map = {} # {doc_id: url}
         self.doc_count_partial_index = 0
         self.logger = get_logger("INVERTED_INDEX")
@@ -74,12 +72,13 @@ class InvertedIndex:
                     master_index[token].extend(postings)
 
         # Save master index to disk
+        self.logger.info(f"Saving to file...")
         with open(MASTER_INDEX_FILE, "w", encoding="utf-8") as f:
             json.dump(master_index, f, indent=4)
 
         self.logger.info(f"Master index built successfully and saved to {MASTER_INDEX_FILE}")
     
-    def construct_merged_index_from_disk(self, query_tokens: list[str]) -> dict[str, list[tuple[int, int]]]:
+    def construct_merged_index_from_disk(self, query_tokens: list[str]) -> dict[str, list[tuple[int, int, int]]]:
         """
         Constructs inverted index containing only query tokens from partial inverted index stored on disk
         
@@ -87,7 +86,7 @@ class InvertedIndex:
         query_tokens (list[str]): 
 
         Returns:
-        dict[str, list[tuple[int, int]]]: inverted index which contains only the query tokens entries from the partial index
+        dict[str, list[tuple[int, int, int]]]: inverted index which contains only the query tokens entries from the partial index
         """
         merged_index = {}
         for file_name in os.listdir(PARTIAL_INDEX_DIR): 
@@ -104,6 +103,29 @@ class InvertedIndex:
 
         return merged_index
     
+    def get_master_index_from_disk() -> dict[str, list[tuple[int, int, int]]]:
+        """
+        Load master index if it exists
+        """
+        
+        if os.path.exists(MASTER_INDEX_FILE):
+            with open(MASTER_INDEX_FILE, "r", encoding="utf-8") as f:
+                index_data = json.load(f)
+        else:
+            index_data = {}
+
+        return index_data
+
+    def get_doc_id_map_from_disk() -> dict[str, str]:
+        """Load the doc_id map to get urls"""
+
+        doc_id_map = {}
+        if os.path.exists(DOC_ID_MAP_FILE):
+            with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
+                doc_id_map = json.load(f)
+
+        return doc_id_map
+
     def __process_document(self, file_path: str, doc_id: int):
         """
         Takes a file path to a document which stores an html page and updates the inverted index with tokens extracted from text content.
@@ -162,10 +184,8 @@ class InvertedIndex:
         Parameters:
         doc_id (int): the unique identifier of the document
         url (str): url web address of the related document
-
-        Returns:
-        dict[str, list[tuple[int, int]]]
         """
+
         self.doc_id_map[doc_id] = url
 
     def __save_doc_id_map_to_disk(self) -> None: 
@@ -194,7 +214,7 @@ class InvertedIndex:
         self.logger.info("Dumping index to disk")
         
         # Create a new .json partial index file
-        index_file = os.path.join(PARTIAL_INDEX_DIR, f"index_part_{len(os.listdir(PARTIAL_INDEX_DIR))}.json")
+        index_file = os.path.join(PARTIAL_INDEX_DIR, f"index_part_{len(os.listdir(PARTIAL_INDEX_DIR)):04d}.json")
 
         # check if .json partial index file already existing index
         if os.path.exists(index_file):
