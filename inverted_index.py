@@ -8,12 +8,14 @@ from utils import clean_url, is_non_html_extension, get_logger, tokenize_text, s
 
 # Constants 
 PARTIAL_INDEX_DOC_THRESHOLD = 250 # Dump index to latest JSON file every 100 docs
+
 DOC_ID_DIR = "index/doc_id_map"            # "index/doc_id_map"
 PARTIAL_INDEX_DIR = "index/partial_index"  # "index/partial_index"
 MASTER_INDEX_DIR = "index/master_index"    # "index/master_index"
+
 MASTER_INDEX_FILE = os.path.join(MASTER_INDEX_DIR, "master_index.json")
 DOC_ID_MAP_FILE = os.path.join(DOC_ID_DIR, "doc_id_map.json")
-
+META_DATA_FILE = os.path.join(DOC_ID_DIR, "meta_data.json")
 
 class InvertedIndex: 
     def __init__(self):
@@ -24,6 +26,8 @@ class InvertedIndex:
         self.index: dict[str, list[tuple[int, float]]] = defaultdict(list)  # {token: [(docid, freq, tf)]}
         self.doc_id_map = {} # {doc_id: url}
         self.doc_count_partial_index = 0
+        self.doc_count_total = 0
+        self.average_doc_length = 0
         self.logger = get_logger("INVERTED_INDEX")
 
         # Initializes directories for index storage
@@ -36,19 +40,30 @@ class InvertedIndex:
         Process all JSON files in folder and build index.
         """
 
-        doc_id = 0
         for root, dirs, files in os.walk(folder_path):
             for file_name in files:
-                self.logger.info(f"Indexing doc: {doc_id}")
+                self.logger.info(f"Indexing doc: {self.doc_count_total}")
                 if file_name.endswith(".json"):
-                    self.__process_document(os.path.join(root, file_name), doc_id)
-                doc_id += 1
+                    self.__process_document(os.path.join(root, file_name), self.doc_count_total)
+                else:
+                    self.logger.warning(f"File not does not end with .json extention: {file_name}")
+                
+                # Update counters
+                self.doc_count_partial_index += 1       # Used for Partial Indexing
+                self.doc_count_total += 1
+
+                # Partial Indexing: If threshold is reached, store partial index and reset RAM
+                if self.doc_count_partial_index >= PARTIAL_INDEX_DOC_THRESHOLD: 
+                    self.__dump_to_disk()
                 
         # Dump any remaining tokens to disk
         if self.index: 
             self.__save_index_to_disk()
             self.index.clear()
             gc.collect()
+
+        # Save index meta data disk
+        self.__save_meta_data_to_disk()
 
     def build_master_index(self) -> None:
         """
@@ -169,13 +184,6 @@ class InvertedIndex:
             tf = InvertedIndex.__compute_tf(freq, len(tokens))
             self.index[token].append((doc_id, freq, tf))
 
-        # Update counters
-        self.doc_count_partial_index += 1       # Used for Partial Indexing
-
-        # Partial Indexing: If threshold is reached, store partial index and reset RAM
-        if self.doc_count_partial_index >= PARTIAL_INDEX_DOC_THRESHOLD: 
-            self.__dump_to_disk()
-
     def __update_doc_id_map(self, doc_id: int, url: str) -> None:
         """
         Updates the document id-url index with the provided doc_id url pair.
@@ -187,6 +195,18 @@ class InvertedIndex:
         """
 
         self.doc_id_map[doc_id] = url
+
+    def __save_meta_data_to_disk(self) -> None: 
+        """"""
+
+        meta_data = {
+            "doc_count_total": self.doc_count_total,
+            "average_doc_length": self.average_doc_length
+        }
+        
+        # write index to file
+        with open(META_DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(meta_data, f, indent=4)
 
     def __save_doc_id_map_to_disk(self) -> None: 
         """

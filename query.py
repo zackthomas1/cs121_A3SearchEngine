@@ -2,8 +2,11 @@ import math
 from inverted_index import InvertedIndex
 from utils import tokenize_text, stem_tokens
 
+def expand_query():
+    pass
+
 def tokenize_query(query: str) -> list[str]: 
-    return stem_tokens(tokenize_text(query))
+    return stem_tokens(tokenize_text(query.lower()))
 
 def ranked_boolean_search(query_tokens: list[str], inverted_index: InvertedIndex) -> list[set[str, int]]:
     """
