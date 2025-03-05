@@ -8,6 +8,9 @@ from utils import get_logger
 from summary import top_n_result_urls
 
 
+def form_query_tokens(query: str) -> list[str]: 
+    pass
+
 if __name__ == "__main__":
     RESULT_NUM = 5
 
