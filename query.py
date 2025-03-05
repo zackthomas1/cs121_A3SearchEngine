@@ -15,7 +15,7 @@ def ranked_boolean_search(query_tokens: list[str], inverted_index: InvertedIndex
     """
    
     merged_index = inverted_index.construct_merged_index_from_disk(query_tokens)
-
+    total_docs = len(inverted_index.get_doc_id_map_from_disk())
     scores = {}
     # AND boolean implementation: merge docId results on token occurances
     for token in query_tokens:
@@ -23,10 +23,13 @@ def ranked_boolean_search(query_tokens: list[str], inverted_index: InvertedIndex
             scores = {doc_id: freq for doc_id, freq, tf in merged_index[token]}
         else:
             relevent_documents = merged_index[token]
+            doc_freq = len(relevent_documents)
             for doc_id, freq, tf in relevent_documents:
                 if doc_id in scores:
-                    # measures quality of document by the frequency of query tokens
-                    scores[doc_id] += freq
+                    # # measures quality of document by the frequency of query tokens
+                    # scores[doc_id] += freq
+                    # measures quality of document by tf-idf score
+                    scores[doc_id] += compute_tf_idf(tf, doc_freq, total_docs)
 
     # Sort the merged results by their "quality"
     def sorted_docs(item: tuple[int, int]) -> tuple[int, int]:
@@ -35,20 +38,21 @@ def ranked_boolean_search(query_tokens: list[str], inverted_index: InvertedIndex
     
     return sorted(scores.items(), key=sorted_docs)
 
-def compute_tf_idf(token: str, doc_id: int) -> int:
+def compute_tf_idf(tf: int, doc_freq: int, total_docs: int) -> int:
     """
-    Call this function in loop for all documents like below.
-        tfidf_table = 
-        For text[contents] in all document files:
-            for each token in each text[contents]:
-                tf = __calculate_tfscore(token, text)
+    Computes the tf-idf score. 
+    TF(Token Frequency): term_freq / doc_length 
+    IDF (Inverse Document Frequency): math.log(total_docs / (1+doc_freq))
+
+    Parameters:
+    tf (int): The token frequency score calculated during document processing
+    doc_freq (int): Number of documents that contain the token
+    total_docs (int): Total number of documents in corpus
+
+    Returns:
+    int: The tf-idf score
     """
 
-    term_freq = 0
-    doc_freq = 0 
-    doc_length = 0
-    tf = term_freq /  doc_length 
-    total_docs = 0
     idf = math.log(total_docs / (1+doc_freq))
 
     return tf * idf

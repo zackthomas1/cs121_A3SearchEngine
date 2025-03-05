@@ -1,5 +1,3 @@
-import os
-import json
 from inverted_index import InvertedIndex
 from query import tokenize_query, ranked_boolean_search
 
@@ -71,7 +69,7 @@ def retrive_relevant_urls(query: str, n: int, index: InvertedIndex) -> list[str]
 
 if __name__ == "__main__":
     index = InvertedIndex()
-    # index.build_master_index()
+    index.build_master_index()
 
     # m1 report
     # ---------------------------
@@ -92,3 +90,6 @@ if __name__ == "__main__":
         top_query_results = retrive_relevant_urls(query, N_RESULTS, index)
         for ranked_pos, url in enumerate(top_query_results, start=1):
             print(f"\t {ranked_pos}. {url}")
+
+    # m3 report
+    # ---------------------------
