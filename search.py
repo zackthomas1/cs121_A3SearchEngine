@@ -3,7 +3,7 @@ from numpy.linalg import norm
 from collections import defaultdict
 from inverted_index import InvertedIndex
 from nltk.corpus import wordnet as wn
-from utils import get_logger
+from utils import compute_tf_idf, get_logger
 
 # constants 
 EPSILON = 0.0001
@@ -58,7 +58,7 @@ def search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIn
     """
    
     merged_index = inverted_index.construct_merged_index_from_disk(query_tokens)
-    total_docs = len(inverted_index.get_doc_id_map_from_disk())
+    total_docs = len(inverted_index.load_doc_id_map_from_disk())
     scores = defaultdict(float)
     
     # Compute Query Vector: Uses raw term counts
@@ -78,44 +78,15 @@ def search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIn
                 token_weight = compute_tf_idf(tf, doc_freq, total_docs)
                 scores[doc_id] += token_weight * query_vector[token]
 
-    # Compute document vector norms by summing squared token weights
-    doc_norms = defaultdict(float)
-    for token in query_tokens: 
-        if token in merged_index: 
-            postings = merged_index[token]
-            doc_freq = len(postings)
-            for doc_id, freq, tf in postings: 
-                token_weight = compute_tf_idf(tf, doc_freq, total_docs)
-                doc_norms[doc_id] += token_weight ** 2
-    for doc_id in doc_norms:
-        doc_norms[doc_id] = math.sqrt(doc_norms[doc_id])
+    # Load precomputed document vector norms
+    precomputed_doc_norms = inverted_index.load_doc_norms_from_disk()
 
     # Normalize scores to obtain cosine similarity
     # Cosine Similarity (A, B) = (A · B) / (||A|| * ||B||)
     for doc_id in scores:
-        doc_norm = doc_norms[doc_id]
+        doc_norm = precomputed_doc_norms[doc_id]
         if abs(doc_norm) > EPSILON and abs(query_norm) > EPSILON:
             scores[doc_id] /= (doc_norm * query_norm)
 
     # Sort the merged results by their cosine similarity (quality), tie-break with doc_id
     return sorted(scores.items(), key=lambda item: (-item[1], item[0]))
-
-def compute_tf_idf(tf: int, doc_freq: int, total_docs: int) -> int:
-    """
-    Computes the tf-idf score. 
-    TF(Token Frequency): term_freq / doc_length 
-    IDF (Inverse Document Frequency): math.log(total_docs / (1+doc_freq))
-
-    Parameters:
-        tf (int): The token frequency score calculated during document processing
-        doc_freq (int): Number of documents that contain the token
-        total_docs (int): Total number of documents in corpus
-
-    Returns:
-        int: The tf-idf score
-    """
-
-    idf = math.log(total_docs / (1+doc_freq))
-
-    return tf * idf
-

@@ -1,21 +1,23 @@
 import os
 import gc
+import math
 import json
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
-from utils import clean_url, is_non_html_extension, get_logger, tokenize_text, is_xml
+from utils import clean_url, compute_tf_idf, get_logger, tokenize_text, is_non_html_extension, is_xml
 
 
 # Constants 
 PARTIAL_INDEX_DOC_THRESHOLD = 250 # Dump index to latest JSON file every 100 docs
 
-DOC_ID_DIR          = "index/doc_id_map"    # "index/doc_id_map"
+META_DIR            = "index/meta_data"    # "index/doc_id_map"
 PARTIAL_INDEX_DIR   = "index/partial_index" # "index/partial_index"
 MASTER_INDEX_DIR    = "index/master_index"  # "index/master_index"
 
 MASTER_INDEX_FILE   = os.path.join(MASTER_INDEX_DIR, "master_index.json")
-DOC_ID_MAP_FILE     = os.path.join(DOC_ID_DIR, "doc_id_map.json")
-META_DATA_FILE      = os.path.join(DOC_ID_DIR, "meta_data.json")
+DOC_ID_MAP_FILE     = os.path.join(META_DIR, "doc_id_map.json")
+META_DATA_FILE      = os.path.join(META_DIR, "meta_data.json")
+DOC_NORMS_FILE      = os.path.join(META_DIR, "doc_norms.json")
 
 class InvertedIndex: 
     def __init__(self):
@@ -31,7 +33,7 @@ class InvertedIndex:
         self.logger = get_logger("INVERTED_INDEX")
 
         # Initializes directories for index storage
-        os.makedirs(DOC_ID_DIR, exist_ok=True) 
+        os.makedirs(META_DIR, exist_ok=True) 
         os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
         os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
 
@@ -93,15 +95,15 @@ class InvertedIndex:
 
         self.logger.info(f"Master index built successfully and saved to {MASTER_INDEX_FILE}")
     
-    def construct_merged_index_from_disk(self, query_tokens: list[str]) -> dict[str, list[tuple[int, int, int]]]:
+    def construct_merged_index_from_disk(self, query_tokens: list[str]) -> dict[str, list[tuple[int, int, float]]]:
         """
         Constructs inverted index containing only query tokens from partial inverted index stored on disk
         
         Parameters:
-        query_tokens (list[str]): 
+            query_tokens (list[str]): 
 
         Returns:
-        dict[str, list[tuple[int, int, int]]]: inverted index which contains only the query tokens entries from the partial index
+            dict[str, list[tuple[int, int, float]]]: inverted index which contains only the query tokens entries from the partial index
         """
         merged_index = {}
         for file_name in os.listdir(PARTIAL_INDEX_DIR): 
@@ -118,29 +120,89 @@ class InvertedIndex:
 
         return merged_index
     
-    def get_master_index_from_disk(self) -> dict[str, list[tuple[int, int, int]]]:
+    def load_doc_id_map_from_disk(self) -> dict[str, str]:
+        """Load the doc_id map to get urls"""
+
+        if os.path.exists(DOC_ID_MAP_FILE):
+            with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
+                doc_id_map = json.load(f)
+        else:
+            self.logger.error("Unable to load doc id map. Path does not exist: {DOC_ID_MAP_FILE}")
+            doc_id_map = {}
+
+        return doc_id_map
+    
+    def load_doc_norms_from_disk(self) -> dict[int, float]:
         """
-        Load master index if it exists
+        Loads the precomputed document norms from disk.
+
+        Returns:
+            dict[int, float]: A dictionary mapping document IDs(int) to their norm values(float).
+        """
+
+        if os.path.exists(DOC_NORMS_FILE):
+            with open(DOC_NORMS_FILE, "r", encoding="utf-8") as f:
+                doc_norms = json.load(f)
+
+            # Coverty keys to int and values to float
+            doc_norms = {int(key): float(value) for key, value in doc_norms.items()}
+        else:
+            self.logger.error("Unable to load document norms. Path does not exist: {DOC_NORMS_FILE}")
+            doc_norms = {}
+
+        return doc_norms
+
+    def load_master_index_from_disk(self) -> dict[str, list[tuple[int, int, float]]]:
+        """
+        Load master index from dist
+
+        Returns: 
+            dict[str, list[tuple[int, int, float]]]: A dictionary mapping token(str) to postings(list[tuple[int, int, float])
         """
         
         if os.path.exists(MASTER_INDEX_FILE):
             with open(MASTER_INDEX_FILE, "r", encoding="utf-8") as f:
                 index_data = json.load(f)
         else:
+            self.logger.error("Unable to load master index. Path does not exist: {MASTER_INDEX_FILE}")
             index_data = {}
 
         return index_data
 
-    def get_doc_id_map_from_disk(self) -> dict[str, str]:
-        """Load the doc_id map to get urls"""
+    def precompute_document_norms(self) -> None:
+        """
+        Precomputes the Euclidean norm of each document's vector using tf-idf weighting. 
 
-        doc_id_map = {}
-        if os.path.exists(DOC_ID_MAP_FILE):
-            with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
-                doc_id_map = json.load(f)
+        The norm of a document is the squer root of the sum of squared tf-idf weights
+        of all the tokens which are in that document. 
 
-        return doc_id_map
+        Store precomputed norms in JSON file for look up at query time.
+        """
 
+        self.logger.info("Precomputing document normals...")
+
+        master_index = self.load_master_index_from_disk()
+        total_docs = self.doc_count_total
+        doc_norms = defaultdict(float)
+        
+        # Compute document vector norms by summing squared token weights
+        for token, postings in master_index.items(): 
+            doc_freq = len(postings)
+            for posting in postings: 
+                doc_id, freq, tf = posting
+                weight = compute_tf_idf(tf, doc_freq, total_docs)
+                doc_norms[doc_id] += weight ** 2
+
+        # Take square root for each document
+        for doc_id in doc_norms: 
+            doc_norms[doc_id] = math.sqrt(doc_norms[doc_id])
+
+        # Save computed doc norms to disk
+        with open(DOC_NORMS_FILE, "w", encoding="utf-8") as f: 
+            json.dump(doc_norms, f, indent=4)
+
+        self.logger.info(f"Document norms saved to: {DOC_NORMS_FILE}")
+        
     def __process_document(self, file_path: str, doc_id: int) -> None:
         """
         Takes a file path to a document which stores an html page and updates the inverted index with tokens extracted from text content.
