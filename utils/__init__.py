@@ -64,10 +64,10 @@ def lemmatize_tokens(tokens: list[str]) -> list[str]:
     Apply nltk lemmatization algorithm to extracted tokens
     
     Parameters:
-    tokens (list[str]): a list of raw tokens 
+        tokens (list[str]): a list of raw tokens 
 
     Returns:
-    list[str]: a lemmatized list of tokens
+        list[str]: a lemmatized list of tokens
     """
     return [lemmatizer.lemmatize(token) for token in tokens]
 
@@ -76,10 +76,10 @@ def stem_tokens(tokens: list[str]) -> list[str]:
     Apply porters stemmer to tokens
     
     Parameters:
-    tokens (list[str]): a list of raw tokens 
+        tokens (list[str]): a list of raw tokens 
 
     Returns:
-    list[str]: a lemmatized list of tokens
+        list[str]: a lemmatized list of tokens
     """
     
     return [stemmer.stem(token) for token in tokens]
@@ -89,12 +89,19 @@ def tokenize_text(text: str) -> list[str]:
     Use nltk to tokenize text. Remove stop words and non alphanum
     
     Parameters:
-    text (str): Text content parsed from an html document
+        text (str): Text content parsed from an html document
 
     Returns:
-    list[str]: a list of tokens extracted from the text content string
+        list[str]: a list of tokens extracted from the text content string
     """
 
     tokens =  word_tokenize(text.lower())
     return [token for token in tokens if token.isalnum()]
     # return tokenizer.tokenize(text)
+
+def is_xml(content: str) -> bool: 
+    """
+    """
+
+    stripped_content = content.lstrip().lower() 
+    return  stripped_content.startswith("<?xml") or stripped_content.startswith("<xml")
