@@ -1,17 +1,10 @@
 import re
 import os
 import logging
-import nltk
 from urllib.parse import urlparse
-from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
 from nltk.stem import WordNetLemmatizer
-
-
-
-# Constants 
-STOPWORDS = set(stopwords.words('english'))
 
 #
 lemmatizer = WordNetLemmatizer()
@@ -103,5 +96,5 @@ def tokenize_text(text: str) -> list[str]:
     """
 
     tokens =  word_tokenize(text.lower())
-    return [token for token in tokens if token.isalnum() and token not in STOPWORDS]
+    return [token for token in tokens if token.isalnum()]
     # return tokenizer.tokenize(text)
