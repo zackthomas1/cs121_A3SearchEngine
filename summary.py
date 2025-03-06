@@ -16,12 +16,9 @@ def tokens_count():
     Returns the total number of tokens
     """
     # Load master index if it exists
+    index_data = {}
     if os.path.exists(MASTER_INDEX_FILE):
-        with open(MASTER_INDEX_FILE, "r", encoding="utf-8") as f:
-            index_data = json.load(f)
-    else:
-        index_data = {}
-
+        InvertedIndex.__load_txt(MASTER_INDEX_FILE, index_data)
     return len(index_data.keys())
 
 def unique_tokens_count():
@@ -29,11 +26,9 @@ def unique_tokens_count():
     unique_tokens = set()
 
     # Load master index if it exists
+    index_data = {}
     if os.path.exists(MASTER_INDEX_FILE):
-        with open(MASTER_INDEX_FILE, "r", encoding="utf-8") as f:
-            index_data = json.load(f)
-    else:
-        index_data = {}
+        InvertedIndex.__load_txt(MASTER_INDEX_FILE, index_data)
 
     # Iterate through all tokens
     for token, postings in index_data.items():
@@ -55,8 +50,8 @@ def top_n_result_urls(query: str, n: int, index: InvertedIndex, logger) -> List[
     
     {'ahm': [[111, 1], [238, 2], [499, 1], [4360, 1], [5006, 4], [592, 3], [686, 1], [744, 1], [745, 1], [5013, 2], [5030, 2], [5035, 2], [5038, 2], [5047, 6], [5051, 2], [5095, 2], [5118, 2], [5138, 2], [835, 1], [1110, 1], [1133, 1]]}
     """
-    logger.info(f"Processing query: {query}")
-    relevent_index = index.search(query)
+    logger.info(f"Processing query: {query}")                                      # query = "hello world python"
+    relevent_index = index.search(query)                                           # relevent_index = {hello: [[111, 1], ...], world, python}
     # merged_results = {docId: token_occurances}
     merged_results = {}
 
@@ -65,11 +60,11 @@ def top_n_result_urls(query: str, n: int, index: InvertedIndex, logger) -> List[
         logger.info(f"Processing token: {token}")
         # Initialize 'merged_results' if empty
         if not merged_results:
-            merged_results = {key: value for key, value in relevent_index[token]}
+            merged_results = {key: value for key, value in relevent_index[token]}  # merged_results = {111: 1, 238: 2, 499: 1}
 
         # Find and merge relevent documents
         else:
-            relevent_documents = relevent_index[token]
+            relevent_documents = relevent_index[token]                             # relevent_documents = [[999, 9], [888, 8], [777, 7]]
 
             for docId, token_occurances in relevent_documents:
                 if docId in merged_results:
@@ -84,8 +79,7 @@ def top_n_result_urls(query: str, n: int, index: InvertedIndex, logger) -> List[
 
     # Load the docId map to get URLS
     if os.path.exists(DOC_ID_MAP_FILE):
-        with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
-            id_map = json.load(f)
+        InvertedIndex.load_txt_docid_map_file(id_map)
 
     # Get and return the top N urls
     ordered_url_list = set()
