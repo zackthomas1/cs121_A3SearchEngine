@@ -3,19 +3,19 @@ import gc
 import json
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
-from utils import clean_url, is_non_html_extension, get_logger, tokenize_text, stem_tokens
+from utils import clean_url, is_non_html_extension, get_logger, tokenize_text, is_xml
 
 
 # Constants 
 PARTIAL_INDEX_DOC_THRESHOLD = 250 # Dump index to latest JSON file every 100 docs
 
-DOC_ID_DIR = "index/doc_id_map"            # "index/doc_id_map"
-PARTIAL_INDEX_DIR = "index/partial_index"  # "index/partial_index"
-MASTER_INDEX_DIR = "index/master_index"    # "index/master_index"
+DOC_ID_DIR          = "index/doc_id_map"    # "index/doc_id_map"
+PARTIAL_INDEX_DIR   = "index/partial_index" # "index/partial_index"
+MASTER_INDEX_DIR    = "index/master_index"  # "index/master_index"
 
-MASTER_INDEX_FILE = os.path.join(MASTER_INDEX_DIR, "master_index.json")
-DOC_ID_MAP_FILE = os.path.join(DOC_ID_DIR, "doc_id_map.json")
-META_DATA_FILE = os.path.join(DOC_ID_DIR, "meta_data.json")
+MASTER_INDEX_FILE   = os.path.join(MASTER_INDEX_DIR, "master_index.json")
+DOC_ID_MAP_FILE     = os.path.join(DOC_ID_DIR, "doc_id_map.json")
+META_DATA_FILE      = os.path.join(DOC_ID_DIR, "meta_data.json")
 
 class InvertedIndex: 
     def __init__(self):
@@ -141,15 +141,15 @@ class InvertedIndex:
 
         return doc_id_map
 
-    def __process_document(self, file_path: str, doc_id: int):
+    def __process_document(self, file_path: str, doc_id: int) -> None:
         """
         Takes a file path to a document which stores an html page and updates the inverted index with tokens extracted from text content.
         Reads the file from disk. Extracts the html content. Updates the doc_id-url map. Tokenize the textual content.
         Update the inverted index with
 
         Parameters:
-        file_path (str): The absolute file path to the document in the local file storage system
-        doc_id (int): The unique id for the document at the provided file location 
+            file_path (str): The absolute file path to the document in the local file storage system
+            doc_id (int): The unique id for the document at the provided file location 
         """
 
         # Read json file from disk
@@ -164,18 +164,21 @@ class InvertedIndex:
             self.logger.warning(f"Skipping url with non html extension")
             return
 
-        # Extract textual content from html content
-        text = self.__extract_text_from_html_content(data['content'])
-        if not text: 
-            self.logger.warning(f"Skipping empty HTML text content: {file_path}")
+        content = data['content']
+        if not content: 
+            self.logger.warning(f"Skipping empty content: {file_path}")
             return
+        if is_xml(content):
+            self.logger.warning(f"Skipping content is XML: {file_path}")
+            return
+
+        # Extract tokens from html content
+        tokens = self.__extract_tokens_with_weighting(content)
 
         #
         self.__update_doc_id_map(doc_id, url)
 
         # Tokenize text
-        # self.logger.info(f"Tokenizing document content")
-        tokens = stem_tokens(tokenize_text(text))
         token_freq = InvertedIndex.__construct_token_freq_counter(tokens)
 
         # Update the inverted index with document tokens
@@ -282,31 +285,47 @@ class InvertedIndex:
         counter.update(tokens)
         return counter
 
-    def __extract_text_from_html_content(self, content: str) -> str: 
+    def __extract_tokens_with_weighting(self, content: str, weigh_factor: int = 2) -> list[str]: 
         """
-        Extract the text content from a html content string. Ignores all of the markup and html tags
-        and only returns the text content.
+        Extract toekns from HTML content and applies extra wieght to tokens that 
+        appear in important HTML tags (titles, h1, h2, h3, and strong). 
 
         Parameters:
-        text (str): html content
+            text (str): html content
+            weight_factor (int): how much importance to assign tags
 
         Returns:
-        str: A string containing only the textual content from the html document.
+            list[str]: A combined list of tokens. Toeksn from important sections are replicated 
         """
 
         try:
-            #TODO: Check that the content is html before parsing. Document content may also be xml
-
             # Get the text from the html response
             soup = BeautifulSoup(content, 'html.parser')
 
             # Remove the text of CSS, JS, metadata, alter for JS, embeded websites
-            for markup in soup.find_all(["style", "script", "meta", "noscript", "iframe"]):  
-                markup.decompose()  # remove all markups stated above
+            for tag in soup.find_all(["style", "script", "meta", "noscript", "iframe"]):  
+                tag.decompose()  # remove all markups stated above
             
             # soup contains only human-readable texts now to be compared near-duplicate
-            text = soup.get_text(separator=" ", strip=True)
-            return text
+            general_text = soup.get_text(separator=" ", strip=True)
+            general_tokens = tokenize_text(general_text)
+
+            # Extract important text from specific tags and tokenize 
+            important_tags = ["title", "h1", "h2", "h3", "strong"]
+            important_text = ""
+            for tag in important_tags: 
+                for element in soup.find_all(tag): 
+                    important_text += " " + element.get_text(separator=" ", strip=True)
+
+            important_tokens = tokenize_text(important_text)
+
+            # Weight important tokens by replicating them
+            # Tokens from the important sections are multiplied by a weight factor. 
+            # This effectively increases their frequency count.
+            
+            weighted_tokens = general_tokens + (important_tokens * weigh_factor)
+
+            return weighted_tokens
         except Exception as e:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
             return None 
