@@ -306,7 +306,28 @@ class InvertedIndex:
             
             # soup contains only human-readable texts now to be compared near-duplicate
             text = soup.get_text(separator=" ", strip=True)
-            return text
+            
+            # Extract important text
+            IMPORTANT_WEIGHT = 2
+            important_words = []
+
+            # Bold & Strong text
+            for tag in soup.find_all(["b", "strong"]):
+                important_words.extend(tag.get_text(separator=" ", strip=True).split())
+
+            # Headings
+            for tag in soup.find_all(["h1", "h2", "h3"]):
+                important_words.extend(tag.get_text(separator=" ", strip=True).split())
+
+            # Title
+            title_tag = soup.find("title")
+            if title_tag:
+                important_words.extend(title_tag.get_text(separator=" ", strip=True).split())
+                
+            # Artificially increase frequency of important words
+            weighted_text = text + " " + " ".join(important_words * IMPORTANT_WEIGHT)  # Duplicate important words
+            
+            return weighted_text
         except Exception as e:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
             return None 
