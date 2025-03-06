@@ -1,5 +1,6 @@
 from inverted_index import InvertedIndex
-from query import tokenize_query, ranked_boolean_search
+from search import expand_query, search_cosine_similarity
+from utils import tokenize_text
 
 def count_tokens(index: InvertedIndex) -> int:
     """
@@ -50,9 +51,8 @@ def retrive_relevant_urls(query: str, n: int, index: InvertedIndex) -> list[str]
     
     {'ahm': [[111, 1], [238, 2], [499, 1], [4360, 1], [5006, 4], [592, 3], [686, 1], [744, 1], [745, 1], [5013, 2], [5030, 2], [5035, 2], [5038, 2], [5047, 6], [5051, 2], [5095, 2], [5118, 2], [5138, 2], [835, 1], [1110, 1], [1133, 1]]}
     """
-
-    query_tokens = tokenize_query(query)
-    ranked_results = ranked_boolean_search(query_tokens, index)
+    query_tokens = tokenize_text(expand_query(query))
+    ranked_results = search_cosine_similarity(query_tokens, index)
     ranked_results = ranked_results[:n]
 
     # Load the doc_id map to get urls

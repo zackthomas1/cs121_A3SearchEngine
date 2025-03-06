@@ -40,10 +40,10 @@ def expand_query(query: str, limit: int = 3) -> str:
         for synonym in list(synonyms)[:limit]: 
             expanded_words.append(synonym)
         
-        # return expanded query as single string
-        expanded_query = " ".join(expanded_words)
-        search_logger.info(f"Query Expanded to: {expanded_query}")
-        return expanded_query
+    # return expanded query as single string
+    expanded_query = " ".join(expanded_words)
+    search_logger.info(f"Query Expanded to: {expanded_query}")
+    return expanded_query
 
 def search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIndex) -> list[set[str, int]]:
     """
