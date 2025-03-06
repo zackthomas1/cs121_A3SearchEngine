@@ -13,7 +13,7 @@ def count_tokens(index: InvertedIndex) -> int:
     int: number of tokens in inverted index
     """
 
-    index_data = index.get_master_index_from_disk()
+    index_data = index.load_master_index_from_disk()
     return len(index_data.keys())
 
 def count_unique_tokens(index: InvertedIndex) -> int:
@@ -29,7 +29,7 @@ def count_unique_tokens(index: InvertedIndex) -> int:
 
     unique_tokens = set()
 
-    index_data = index.get_master_index_from_disk()
+    index_data = index.load_master_index_from_disk()
 
     # Iterate through all tokens
     for token, postings in index_data.items():
@@ -56,7 +56,7 @@ def retrive_relevant_urls(query: str, n: int, index: InvertedIndex) -> list[str]
     ranked_results = ranked_results[:n]
 
     # Load the doc_id map to get urls
-    doc_id_url_map = index.get_doc_id_map_from_disk()
+    doc_id_url_map = index.load_doc_id_map_from_disk()
 
     # Get and return the top N urls
     ranked_urls = set()

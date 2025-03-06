@@ -1,5 +1,6 @@
 import re
 import os
+import math
 import logging
 from urllib.parse import urlparse
 from nltk.tokenize import word_tokenize
@@ -9,6 +10,25 @@ from nltk.stem import WordNetLemmatizer
 #
 lemmatizer = WordNetLemmatizer()
 stemmer = PorterStemmer()
+
+def compute_tf_idf(tf: int, doc_freq: int, total_docs: int) -> int:
+    """
+    Computes the tf-idf score. 
+    TF(Token Frequency): term_freq / doc_length 
+    IDF (Inverse Document Frequency): math.log(total_docs / (1+doc_freq))
+
+    Parameters:
+        tf (int): The token frequency score calculated during document processing
+        doc_freq (int): Number of documents that contain the token
+        total_docs (int): Total number of documents in corpus
+
+    Returns:
+        int: The tf-idf score
+    """
+
+    idf = math.log(total_docs / (1+doc_freq))
+
+    return tf * idf
 
 def clean_url(url: str) -> str:
     """
@@ -21,19 +41,11 @@ def clean_url(url: str) -> str:
     else:
         return normalize_url(parsed_url._replace(query="", fragment="").geturl())
 
-def is_non_html_extension(url: str) -> bool: 
-    parsed_url = urlparse(url)
-
-    return re.match(
-    r".*\.(css|js|bmp|gif|jpe?g|ico"
-    + r"|png|tiff?|mid|mp2|mp3|mp4"
-    + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
-    + r"|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names"
-    + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
-    + r"|epub|dll|cnf|tgz|sha1"
-    + r"|thmx|mso|arff|rtf|jar|csv"
-    + r"|rm|smil|wmv|swf|wma|zip|rar|gz"
-    + r"|img|java|war|sql|mpg|ff|sh|ppsx|py|apk|svg|conf|cpp|fig|cls|ipynb|bam|odp|odc|tsv|nb|bib|z|rpm|ma)$", parsed_url.path.lower())
+def normalize_url(url: str) -> str:
+    """ strips trailing backslash"""
+    if url.endswith("/"):
+        return url.rstrip("/")
+    return url
 
 def get_logger(name, filename=None):
     logger = logging.getLogger(name)
@@ -53,12 +65,6 @@ def get_logger(name, filename=None):
     logger.addHandler(ch)
     return logger
 
-def normalize_url(url: str) -> str:
-    """ strips trailing backslash"""
-    if url.endswith("/"):
-        return url.rstrip("/")
-    return url
-
 def lemmatize_tokens(tokens: list[str]) -> list[str]:
     """
     Apply nltk lemmatization algorithm to extracted tokens
@@ -70,6 +76,7 @@ def lemmatize_tokens(tokens: list[str]) -> list[str]:
         list[str]: a lemmatized list of tokens
     """
     return [lemmatizer.lemmatize(token) for token in tokens]
+
 
 def stem_tokens(tokens: list[str]) -> list[str]:
     """
@@ -98,6 +105,21 @@ def tokenize_text(text: str) -> list[str]:
     tokens =  word_tokenize(text.lower())
     return [token for token in tokens if token.isalnum()]
     # return tokenizer.tokenize(text)
+
+def is_non_html_extension(url: str) -> bool: 
+    parsed_url = urlparse(url)
+
+    return re.match(
+    r".*\.(css|js|bmp|gif|jpe?g|ico"
+    + r"|png|tiff?|mid|mp2|mp3|mp4"
+    + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
+    + r"|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names"
+    + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
+    + r"|epub|dll|cnf|tgz|sha1"
+    + r"|thmx|mso|arff|rtf|jar|csv"
+    + r"|rm|smil|wmv|swf|wma|zip|rar|gz"
+    + r"|img|java|war|sql|mpg|ff|sh|ppsx|py|apk|svg|conf|cpp|fig|cls|ipynb|bam|odp|odc|tsv|nb|bib|z|rpm|ma)$", parsed_url.path.lower())
+
 
 def is_xml(content: str) -> bool: 
     """
