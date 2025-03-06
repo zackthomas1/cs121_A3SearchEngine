@@ -164,7 +164,7 @@ class InvertedIndex:
         """Saves the Doc_ID-URL mapping to disk as .txt file"""
         existing_docidmap = {}
         if os.path.exists(DOC_ID_MAP_FILE):
-            InvertedIndex.__load_txt_docid_map_file(existing_docidmap)
+            InvertedIndex.load_txt_docid_map_file(existing_docidmap)
 
         for key, value in self.doc_id_map.items(): 
             existing_docidmap[key] = value
