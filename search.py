@@ -1,18 +1,49 @@
 import math
-import numpy as np
 from numpy.linalg import norm
 from collections import defaultdict
 from inverted_index import InvertedIndex
-from utils import tokenize_text, stem_tokens
+from nltk.corpus import wordnet as wn
+from utils import get_logger
 
 # constants 
 EPSILON = 0.0001
 
-def expand_query():
-    pass
+search_logger = get_logger("SEARCH")
 
-def tokenize_query(query: str) -> list[str]: 
-    return stem_tokens(tokenize_text(query.lower()))
+def expand_query(query: str, limit: int = 3) -> str: 
+    """
+    Expands input query by adding synonyms using nltk wordnet
+
+    Parameters:
+        query (str): The original query string
+        limit (int): Maximum number of synonyms added to query. Prevents excessive expansion
+
+    Returns: 
+        str: The expanded query string containing original words and synonyms
+    """
+    words = query.lower().split()
+    expanded_words = []
+
+    for word in words: 
+        # Add original word
+        expanded_words.append(word)
+
+        # get synonyms from WordNet
+        synonyms = set()
+        for syn in wn.synsets(word): 
+            for lemma in syn.lemmas():
+                synonym = lemma.name().replace("_", "").lower()
+                if synonym != word:
+                    synonyms.add(synonym)
+
+        # limit synonyms per word to avoid excessive expansion
+        for synonym in list(synonyms)[:limit]: 
+            expanded_words.append(synonym)
+        
+        # return expanded query as single string
+        expanded_query = " ".join(expanded_words)
+        search_logger.info(f"Query Expanded to: {expanded_query}")
+        return expanded_query
 
 def search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIndex) -> list[set[str, int]]:
     """
@@ -20,10 +51,10 @@ def search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIn
     Documents are ranked based on directional similarity rather than raw frequency.
 
     Parameters:
-    query_tokens (list[str]): a query string 
+        query_tokens (list[str]): a query string 
 
     Returns:
-    dict[str, list[tuple[int, int]]]: Inverted index containing only tokens formed from the query string
+        dict[str, list[tuple[int, int]]]: Inverted index containing only tokens formed from the query string
     """
    
     merged_index = inverted_index.construct_merged_index_from_disk(query_tokens)
@@ -76,12 +107,12 @@ def compute_tf_idf(tf: int, doc_freq: int, total_docs: int) -> int:
     IDF (Inverse Document Frequency): math.log(total_docs / (1+doc_freq))
 
     Parameters:
-    tf (int): The token frequency score calculated during document processing
-    doc_freq (int): Number of documents that contain the token
-    total_docs (int): Total number of documents in corpus
+        tf (int): The token frequency score calculated during document processing
+        doc_freq (int): Number of documents that contain the token
+        total_docs (int): Total number of documents in corpus
 
     Returns:
-    int: The tf-idf score
+        int: The tf-idf score
     """
 
     idf = math.log(total_docs / (1+doc_freq))
