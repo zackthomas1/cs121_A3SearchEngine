@@ -19,11 +19,11 @@ import numpy as np
 STOPWORDS = set(stopwords.words('english'))
 DOC_THRESHOLD = 250 # Dump index to latest JSON file every 100 docs
 # NEW_FILE_THRESHOLD = 1000   # Create new index file every 1000 docs
-DOC_ID_DIR = "index/test_doc_id_map"            # "index/doc_id_map"
-PARTIAL_INDEX_DIR = "index/test_partial_index"  # "index/partial_index"
-MASTER_INDEX_DIR = "index/test_master_index"    # "index/master_index"
-MASTER_INDEX_FILE = os.path.join(MASTER_INDEX_DIR, "master_index.json")
-DOC_ID_MAP_FILE = os.path.join(DOC_ID_DIR, "doc_id_map.json")
+DOC_ID_DIR = "index/doc_id_map"            # "index/doc_id_map"
+PARTIAL_INDEX_DIR = "index/partial_index"  # "index/partial_index"
+MASTER_INDEX_DIR = "index/master_index"    # "index/master_index"
+MASTER_INDEX_FILE = os.path.join(MASTER_INDEX_DIR, "master_index.txt")
+DOC_ID_MAP_FILE = os.path.join(DOC_ID_DIR, "doc_id_map.txt")
 
 #
 lemmatizer = WordNetLemmatizer()
@@ -36,7 +36,7 @@ class InvertedIndex:
         self.index: Dict[str, List[Tuple[int, float]]] = defaultdict(list)  # {token: [(docid, tf_score)]}
         self.doc_count = 0
         self.total_doc_count = 0  # total number of documents
-        self.idf_scores: Dict[str, int] = defaultdict(int)  # value is total number of documents where token(key) appears
+        self.idf_scores: Dict[str, float] = defaultdict(int)  # value is total number of documents where token(key) appears
         self.index_tfidf: Dict[str, List[Tuple[int, float]]] = defaultdict(list)  # TODO: temporary for testing; memory overload expected (DELETE later)
         # self.current_index_file = self.get_latest_index_file()
         self.doc_id_map = {} # map file names to docid
@@ -67,11 +67,11 @@ class InvertedIndex:
             gc.collect()
 
         # Calculate IDF Score and Update self.idf_scores on Live
-            # ln(# of doc / (count + 1)) ; add +1 to smoothen value & prevent error (division by zero) in case
+            # ln(# of doc / (denom + 1)) ; add +1 to smoothen value & prevent error (division by zero) in case
             # Use numpy np.float32 to cut-off 50% RAM take-up (without it's 64 bits)
             # Round to 4 decimal precision for JSON file saving; Wouldn't make difference on ranking performance
-        for token, count in self.idf_scores.items():
-            self.idf_scores[token] = np.float32(round(np.log(self.total_doc_count / (count + 1)), 4))
+        for token, denom in self.idf_scores.items():
+            self.idf_scores[token] = np.float32(round(np.log(self.total_doc_count / (denom + 1)), 4))
 
     def build_master_index(self):
         """Combines all partial indexes into a single master index while preserving order."""
@@ -82,10 +82,10 @@ class InvertedIndex:
         # Iterate through all partial index files
         for file_name in sorted(os.listdir(PARTIAL_INDEX_DIR)):  # Ensure order is maintained
             self.logger.info(f"Adding: {file_name}")
-            if file_name.startswith("index_part_") and file_name.endswith(".json"):
+            if file_name.startswith("index_part_") and file_name.endswith(".txt"):
                 file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
-                with open(file_path, "r", encoding="utf-8") as f:
-                    partial_index = json.load(f)
+                partial_index = defaultdict(list)
+                InvertedIndex.__load_txt(file_path, partial_index)
 
                 # Merge token postings while maintaining order
                 for token, postings in partial_index.items():
@@ -95,12 +95,13 @@ class InvertedIndex:
         # TODO: consider where to save this value (RAM or DISC? Inside master_index Posting or Separate Data Structure?)
         for token, posting in master_index.items():
             for post in posting:
+                #print(post[0], f"{round(np.float32(post[1]) * self.idf_scores[token], 4):.4f}")
+                #print(type(np.float32(post[1])), type(self.idf_scores[token]), type(np.float32(post[1]) * self.idf_scores[token]))
                 self.index_tfidf[token].append(
-                    ( post[0], np.float32(post[1]) * self.idf_scores[token] ))
+                    ( post[0], "{:.4f}".format(np.float32(post[1]) * self.idf_scores[token]) ))
 
         # Save master index to disk
-        with open(MASTER_INDEX_FILE, "w", encoding="utf-8") as f:
-            json.dump(master_index, f, indent=4)
+        InvertedIndex.__dump_txt(MASTER_INDEX_FILE, master_index)
 
         self.logger.info(f"Master index built successfully and saved to {MASTER_INDEX_FILE}")
     
@@ -160,33 +161,29 @@ class InvertedIndex:
         self.doc_id_map[doc_id] = url
 
     def __save_doc_id_map_to_disk(self): 
-        """Saves the Doc_ID-URL mapping to disk as a JSON file"""
+        """Saves the Doc_ID-URL mapping to disk as .txt file"""
+        existing_docidmap = {}
         if os.path.exists(DOC_ID_MAP_FILE):
-            with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
-                existing_map = json.load(f)
-        else: 
-            existing_map = {}
+            InvertedIndex.__load_txt_docid_map_file(existing_docidmap)
 
         for key, value in self.doc_id_map.items(): 
-            existing_map[key] = value
-        
-        # write index to file
-        with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
-            json.dump(existing_map, f, indent=4)
+            existing_docidmap[key] = value
+
+        # Write to doc_id_map.txt file    
+        InvertedIndex.__dump_txt_docid_map_file(existing_docidmap)
+
 
     def __save_index_to_disk(self): 
-        """Store current index to JSON file"""
+        """Store current index to .txt file"""
         self.logger.info("Dumping index to disk")
         
         # Create a new .json partial index file
-        index_file = os.path.join(PARTIAL_INDEX_DIR, f"index_part_{len(os.listdir(PARTIAL_INDEX_DIR))}.json")
+        index_file = os.path.join(PARTIAL_INDEX_DIR, f"index_part_{len(os.listdir(PARTIAL_INDEX_DIR))}.txt")
 
-        # check if .json partial index file already existing index
+        # Check if .txt partial index file already existing index
+        existing_data = defaultdict(list)
         if os.path.exists(index_file):
-            with open(index_file, "r", encoding="utf-8") as f: 
-                existing_data = json.load(f)
-        else: 
-            existing_data = {}
+            InvertedIndex.__load_txt(index_file, existing_data)
 
         # Merge exisiting index with new data from in memory index
         for token, postings in self.index.items(): 
@@ -195,9 +192,9 @@ class InvertedIndex:
             else: 
                 existing_data[token] = postings
 
-        # write index to file
-        with open(index_file, "w", encoding="utf-8") as f:
-            json.dump(existing_data, f, indent=4)
+        # Write index to file
+        InvertedIndex.__dump_txt(index_file, existing_data)
+
 
     def __dump_to_disk(self): 
         """
@@ -216,16 +213,14 @@ class InvertedIndex:
         merged_index = {}
         for file_name in os.listdir(PARTIAL_INDEX_DIR): 
             file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
-            with open(file_path, "r", encoding="utf-8") as f: 
-                index_part = json.load(f)
-
+            index_part = defaultdict(list)
+            InvertedIndex.__load_txt(file_path, index_part)
             for token in query_tokens: 
                 if token in index_part: 
-                    if token in merged_index: 
+                    if token in merged_index:
                         merged_index[token].extend(index_part[token])
                     else: 
                         merged_index[token] = index_part[token]
-
         return merged_index
 
     def __construct_token_freq_counter(tokens) -> Counter:  # NOTE: This is Not a member function
@@ -245,7 +240,6 @@ class InvertedIndex:
         tokens =  word_tokenize(text.lower())
         # NOTE: Why not using built-in ".isalnum()" which is faster?
         return [token for token in tokens if self.re_alnum.match(token) and token not in STOPWORDS]
-        # return tokenizer.tokenize(text)
 
     def __extract_text_from_html_content(self, content: str) -> list[str]: 
         """
@@ -270,7 +264,7 @@ class InvertedIndex:
     def __read_json_file(self, file_path: str) -> dict[str, str]:
         """
         """
-        try: 
+        try:  # NOTE: developer\DEV is given as json files so use json.load() instead of __load_txt() here
             with open(file_path, 'r') as file: 
                 data = json.load(file)
                 # self.logger.info(f"Success: Load JSON file: {file_path}")
@@ -286,24 +280,45 @@ class InvertedIndex:
             return None
         
         
-    def __calculate_tfscore(self, token: str, text: str):
-        """
-        Call this function in loop for all documents like below.
-            tfidf_table = 
-            For text[contents] in all document files:
-                for each token in each text[contents]:
-                    tf = __calculate_tfscore(token, text)
+    def __load_txt(file_path: str, inverted_index: Dict[str, List[Tuple[int, float]]]) -> None:
+        """Dumps inverted index from designated .txt file (usually used with partial_index)"""
+        # NOTE: [LINE FORMAT] token;docid1,posting1 docid2,posting2 docid3,posting3\n
+        with open(file_path, "r", encoding="utf-8") as f:
+            for line in f:
+                # if len(tok_post) < 2:  # NOTE: Omitting bound checking for performance
+                #     continue  # Skip the line if data in wrong format (either token or posting doesn't exist)
+                token, postings_str = line.strip().split(";")
+                postings = []
+                for posting in postings_str.split():
+                    docid, tfidf = posting.split(",")
+                    postings.append((int(docid), np.float32(tfidf)))
+                inverted_index[token] = postings
 
-        """
-        text = self.__tokenize_text(text)
-        tokenToFind = word_tokenize(token.lower())
 
-
-    def __calculate_idfscore(self):
-        pass
-
+    def __dump_txt(file_path: str, inverted_index: Dict[str, List[Tuple[int, float]]]) -> None:
+        """Dumps inverted index into designated .txt file (usually used with master_index)"""
+        with open(file_path, "w", encoding="utf-8") as f:
+            for token, postings in inverted_index.items():
+                postings_str = " ".join([f"{docid},{tfidf}" for docid, tfidf in postings])
+                f.write(f"{token};{postings_str}\n")
 
     
+    def load_txt_docid_map_file(docid_map: Dict[str, str]) -> None:
+        """Loads docid_url map from designated .txt file"""
+        # NOTE: [LINE FORMAT] docid;url\n
+        with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                docid, url = line.strip().split(";")
+                docid_map[docid] = url
+
+
+    def __dump_txt_docid_map_file(docid_map: Dict[str, str]) -> None:
+        """Dumps docid_url map into designated .txt file"""
+        with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
+            for docid, url in docid_map.items():
+                f.write(f"{docid};{url}\n")
+    
+
     """
     # Pseudocode for tf-idf processing
     invIndex = InvertedIndex()
