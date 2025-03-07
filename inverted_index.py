@@ -30,6 +30,7 @@ class InvertedIndex:
         self.doc_count_partial_index = 0
         self.doc_count_total = 0
         self.average_doc_length = 0
+
         self.logger = get_logger("INVERTED_INDEX")
 
         # Initializes directories for index storage
@@ -79,10 +80,10 @@ class InvertedIndex:
         # Iterate through all partial index files
         for file_name in sorted(os.listdir(PARTIAL_INDEX_DIR)):  # Ensure order is maintained
             self.logger.info(f"Adding: {file_name}")
-            if file_name.startswith("index_part_") and file_name.endswith(".json"):
+            if file_name.startswith("index_part_") and file_name.endswith(".txt"):
                 file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
-                with open(file_path, "r", encoding="utf-8") as f:
-                    partial_index = json.load(f)
+                partial_index = defaultdict(list)
+                InvertedIndex.__load_txt(file_path, partial_index)
 
                 # Merge token postings while maintaining order
                 for token, postings in partial_index.items():
@@ -261,6 +262,7 @@ class InvertedIndex:
 
         self.doc_id_map[doc_id] = url
 
+
     def __save_meta_data_to_disk(self) -> None: 
         """"""
 
@@ -275,38 +277,33 @@ class InvertedIndex:
 
     def __save_doc_id_map_to_disk(self) -> None: 
         """
-        Saves the doc_id-url mapping to disk as a JSON file
+        Saves the doc_id-url mapping to disk as .txt file
         """
-
+       existing_docidmap = {}
+      
         if os.path.exists(DOC_ID_MAP_FILE):
-            with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
-                existing_map = json.load(f)
-        else: 
-            existing_map = {}
+            InvertedIndex.load_txt_docid_map_file(existing_docidmap)
 
         for key, value in self.doc_id_map.items(): 
-            existing_map[key] = value
-        
-        # write index to file
-        with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
-            json.dump(existing_map, f, indent=4)
+            existing_docidmap[key] = value
+
+        # Write to doc_id_map.txt file    
+        InvertedIndex.__dump_txt_docid_map_file(existing_docidmap)
 
     def __save_index_to_disk(self) -> None: 
         """
-        Store current index to JSON file
+        Store current index to .txt file
         """
 
         self.logger.info("Dumping index to disk")
         
-        # Create a new .json partial index file
-        index_file = os.path.join(PARTIAL_INDEX_DIR, f"index_part_{len(os.listdir(PARTIAL_INDEX_DIR)):04d}.json")
+        # Create a new .txt partial index file
+        index_file = os.path.join(PARTIAL_INDEX_DIR, f"index_part_{len(os.listdir(PARTIAL_INDEX_DIR)):04d}.txt")
 
-        # check if .json partial index file already existing index
+        # Check if .txt partial index file already existing index
+        existing_data = defaultdict(list)
         if os.path.exists(index_file):
-            with open(index_file, "r", encoding="utf-8") as f: 
-                existing_data = json.load(f)
-        else: 
-            existing_data = {}
+            InvertedIndex.__load_txt(index_file, existing_data)
 
         # Merge exisiting index with new data from in memory index
         for token, postings in self.index.items(): 
@@ -315,9 +312,9 @@ class InvertedIndex:
             else: 
                 existing_data[token] = postings
 
-        # write index to file
-        with open(index_file, "w", encoding="utf-8") as f:
-            json.dump(existing_data, f, indent=4)
+        # Write index to file
+        InvertedIndex.__dump_txt(index_file, existing_data)
+
 
     def __dump_to_disk(self): 
         """
@@ -400,8 +397,7 @@ class InvertedIndex:
         Returns:
         dict[str, str]: returns the data stored in the json file as a python dictionary
         """
-
-        try: 
+        try:  # NOTE: developer\DEV is given as json files so use json.load() instead of __load_txt() here
             with open(file_path, 'r') as file: 
                 data = json.load(file)
                 # self.logger.info(f"Success: Load JSON file: {file_path}")
@@ -415,10 +411,46 @@ class InvertedIndex:
         except Exception as e:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
             return None
+       
+    def __load_txt(file_path: str, inverted_index: Dict[str, List[Tuple[int, float]]]) -> None:
+        """Dumps inverted index from designated .txt file (usually used with partial_index)"""
+        # NOTE: [LINE FORMAT] token;docid1,posting1 docid2,posting2 docid3,posting3\n
+        with open(file_path, "r", encoding="utf-8") as f:
+            for line in f:
+                # if len(tok_post) < 2:  # NOTE: Omitting bound checking for performance
+                #     continue  # Skip the line if data in wrong format (either token or posting doesn't exist)
+                token, postings_str = line.strip().split(";")
+                postings = []
+                for posting in postings_str.split():
+                    docid, tfidf = posting.split(",")
+                    postings.append((int(docid), np.float32(tfidf)))
+                inverted_index[token] = postings
+
+
+    def __dump_txt(file_path: str, inverted_index: Dict[str, List[Tuple[int, float]]]) -> None:
+        """Dumps inverted index into designated .txt file (usually used with master_index)"""
+        with open(file_path, "w", encoding="utf-8") as f:
+            for token, postings in inverted_index.items():
+                postings_str = " ".join([f"{docid},{tfidf}" for docid, tfidf in postings])
+                f.write(f"{token};{postings_str}\n")
+
+    
+    def load_txt_docid_map_file(docid_map: Dict[str, str]) -> None:
+        """Loads docid_url map from designated .txt file"""
+        # NOTE: [LINE FORMAT] docid;url\n
+        with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                docid, url = line.strip().split(";")
+                docid_map[docid] = url
 
     # Non-member functions
     @staticmethod
     def __compute_tf(term_freq: int, doc_length: int)->int: 
         return term_freq / doc_length
 
- 
+    def __dump_txt_docid_map_file(docid_map: Dict[str, str]) -> None:
+        """Dumps docid_url map into designated .txt file"""
+        with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
+            for docid, url in docid_map.items():
+                f.write(f"{docid};{url}\n")
+  

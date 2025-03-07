@@ -7,6 +7,7 @@ if __name__ == "__main__":
     RESULT_NUM = 5
 
     index = InvertedIndex()
+
     logger = get_logger("SEARCHER")
     input_text = ""
     while (input_text != "quit"):
