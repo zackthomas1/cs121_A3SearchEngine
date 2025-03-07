@@ -133,7 +133,7 @@ class InvertedIndex:
     
     def load_doc_id_map_from_disk(self) -> dict[str, str]:
         """Load the doc_id map to get urls"""
-        return read_json_file(DOC_ID_MAP_FILE)
+        return read_json_file(DOC_ID_MAP_FILE, self.logger)
     
     def load_doc_norms_from_disk(self) -> dict[int, float]:
         """
@@ -142,7 +142,7 @@ class InvertedIndex:
         Returns:
             dict[int, float]: A dictionary mapping document IDs(int) to their norm values(float).
         """
-        doc_norms = read_json_file(DOC_NORMS_FILE)
+        doc_norms = read_json_file(DOC_NORMS_FILE, self.logger)
         doc_norms = {int(key): float(value) for key, value in doc_norms.items()}
         return doc_norms
 
@@ -153,7 +153,7 @@ class InvertedIndex:
         Returns: 
             dict[str, list]: A dictionary mapping token(str) to postings(list[tuple[int, int, float])
         """
-        return read_json_file(MASTER_INDEX_FILE)
+        return read_json_file(MASTER_INDEX_FILE, self.logger)
 
     def precompute_document_norms(self) -> None:
         """
@@ -205,7 +205,7 @@ class InvertedIndex:
         """
 
         # Read json file from disk
-        data = self.read_json_file(file_path)
+        data = read_json_file(file_path, self.logger)
         if not data:
             self.logger.warning(f"Skipping empty JSON file: {file_path}")
             return

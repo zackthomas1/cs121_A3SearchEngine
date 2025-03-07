@@ -79,7 +79,7 @@ def lemmatize_tokens(tokens: list[str]) -> list[str]:
     """
     return [lemmatizer.lemmatize(token) for token in tokens]
 
-def read_json_file(file_path: str, logger: Logger) -> dict[str, str]:
+def read_json_file(file_path: str, logger: Logger) -> dict:
     """
     Parameters:
         file_path (str): File path to json document in local file storage
@@ -90,7 +90,7 @@ def read_json_file(file_path: str, logger: Logger) -> dict[str, str]:
     try:
         with open(file_path, 'r') as file: 
             data = json.load(file)
-            # self.logger.info(f"Success: Load JSON file: {file_path}")
+            # logger.info(f"Success: Load JSON file: {file_path}")
             return data
     except FileNotFoundError:
         logger.error(f"File note found at path: {file_path}")
