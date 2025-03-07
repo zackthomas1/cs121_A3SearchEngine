@@ -248,7 +248,7 @@ class InvertedIndex:
         # self.logger.info(f"Updating inverted index")
         for token, freq in token_freq.items():
             tf = InvertedIndex.__compute_tf(freq, len(tokens))
-            self.index[token].append((doc_id, freq, tf))
+            self.index[token].append((doc_id, tf))
 
     def __update_doc_id_map(self, doc_id: int, url: str) -> None:
         """
@@ -279,7 +279,7 @@ class InvertedIndex:
         """
         Saves the doc_id-url mapping to disk as .txt file
         """
-       existing_docidmap = {}
+        existing_docidmap = {}
       
         if os.path.exists(DOC_ID_MAP_FILE):
             InvertedIndex.load_txt_docid_map_file(existing_docidmap)
@@ -412,8 +412,11 @@ class InvertedIndex:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
             return None
        
-    def __load_txt(file_path: str, inverted_index: Dict[str, List[Tuple[int, float]]]) -> None:
-        """Dumps inverted index from designated .txt file (usually used with partial_index)"""
+    def __load_txt(file_path: str, inverted_index: dict[str, list[tuple[int, float]]]) -> None:
+        """
+        loads inverted index from designated .txt file (usually used with partial_index)
+        """
+        
         # NOTE: [LINE FORMAT] token;docid1,posting1 docid2,posting2 docid3,posting3\n
         with open(file_path, "r", encoding="utf-8") as f:
             for line in f:
@@ -423,11 +426,11 @@ class InvertedIndex:
                 postings = []
                 for posting in postings_str.split():
                     docid, tfidf = posting.split(",")
-                    postings.append((int(docid), np.float32(tfidf)))
+                    postings.append((int(docid), float(tfidf)))
                 inverted_index[token] = postings
 
 
-    def __dump_txt(file_path: str, inverted_index: Dict[str, List[Tuple[int, float]]]) -> None:
+    def __dump_txt(file_path: str, inverted_index: dict[str, list[tuple[int, float]]]) -> None:
         """Dumps inverted index into designated .txt file (usually used with master_index)"""
         with open(file_path, "w", encoding="utf-8") as f:
             for token, postings in inverted_index.items():
@@ -435,7 +438,7 @@ class InvertedIndex:
                 f.write(f"{token};{postings_str}\n")
 
     
-    def load_txt_docid_map_file(docid_map: Dict[str, str]) -> None:
+    def load_txt_docid_map_file(docid_map: dict[str, str]) -> None:
         """Loads docid_url map from designated .txt file"""
         # NOTE: [LINE FORMAT] docid;url\n
         with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f:
@@ -443,14 +446,13 @@ class InvertedIndex:
                 docid, url = line.strip().split(";")
                 docid_map[docid] = url
 
-    # Non-member functions
-    @staticmethod
-    def __compute_tf(term_freq: int, doc_length: int)->int: 
-        return term_freq / doc_length
-
-    def __dump_txt_docid_map_file(docid_map: Dict[str, str]) -> None:
+    def __dump_txt_docid_map_file(docid_map: dict[str, str]) -> None:
         """Dumps docid_url map into designated .txt file"""
         with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
             for docid, url in docid_map.items():
                 f.write(f"{docid};{url}\n")
-  
+
+    # Non-member functions
+    @staticmethod
+    def __compute_tf(term_freq: int, doc_length: int)->int: 
+        return term_freq / doc_length
