@@ -276,7 +276,7 @@ class InvertedIndex:
                 # Dump partial index if it exceeds PARTIAL_INDEX_DOC_THRESHOLD
                 if self.alphanumerical_counts[first_char].docCount >= PARTIAL_INDEX_DOC_THRESHOLD:
                     # Reset count
-                    currentIndexCounter = IndexCounter(docCount = 0, currentIndexCounter.indexNum + 1)
+                    currentIndexCounter = IndexCounter(docCount = 0, indexNum = currentIndexCounter.indexNum + 1)
                     self.alphanumerical_counts[first_char] = currentIndexCounter
 
                     # Dump the partial index to disk
