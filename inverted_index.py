@@ -2,13 +2,14 @@ import os
 import gc
 import math
 import json
+import sys
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
 from utils import clean_url, compute_tf_idf, get_logger, tokenize_text, is_non_html_extension, is_xml
 from datastructures import IndexCounter
 
 # Constants 
-PARTIAL_INDEX_DOC_THRESHOLD = 250 # Dump index to latest JSON file every 100 docs
+PARTIAL_INDEX_DOC_THRESHOLD = 500 # Dump index to latest JSON file every 100 docs
 
 META_DIR            = "index/meta_data"    # "index/doc_id_map"
 PARTIAL_INDEX_DIR   = "index/partial_index" # "index/partial_index"
@@ -42,7 +43,7 @@ class InvertedIndex:
         os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
 
         # Initializes directories a-z within the partial index
-        for letter_ascii in range(int('a'), int('z') + 1):
+        for letter_ascii in range(ord('a'), ord('z') + 1):
             os.makedirs(PARTIAL_INDEX_DIR + '/' + chr(letter_ascii), exist_ok=True)
 
         # Initializes directories 0-9 within the partial index
@@ -66,7 +67,7 @@ class InvertedIndex:
                 self.doc_count_total += 1
                 
         # Dump any remaining tokens to disk
-        for alphanum_char, partial_index in alphanumerical_index.items():
+        for alphanum_char, partial_index in self.alphanumerical_index.items():
             if partial_index:
                 self.__save_index_to_disk(alphanum_char)
                 self.alphanumerical_index[alphanum_char].clear()
@@ -258,7 +259,7 @@ class InvertedIndex:
 
             # Append token to alphanumerical_index
             # Only process tokens that are alphanumerical
-            if (token[0].lower().isalnum()):
+            if (token[0].lower().isalnum() and token[0].lower().isascii()):
                 first_char = token[0].lower()
                 self.alphanumerical_index[first_char][token].append((doc_id, freq, tf))
 
@@ -268,12 +269,13 @@ class InvertedIndex:
         # Note which partial indexes were updated and dump if necessary
         for char_modified in alphanumerical_indexes_modified:
             # Get the existing tuple of counts, initialize (0, 0) if none
-            currentIndexCounter = self.alphanumerical_counts[char_modified].get(IndexCounter(docCount = 0, indexNum = 0))
+            currentIndexCounter = self.alphanumerical_counts.get(char_modified, IndexCounter(docCount = 0, indexNum = 0))
 
             # Increment number of documents stored per character
             currentIndexCounter = IndexCounter(docCount = currentIndexCounter.docCount + 1, indexNum=currentIndexCounter.indexNum)
             self.alphanumerical_counts[char_modified] = currentIndexCounter
 
+            # TODO: Modify to dump on file size rather than document threshold. You should do this by getting the size of the posting list
             # Dump partial index if it exceeds PARTIAL_INDEX_DOC_THRESHOLD
             if self.alphanumerical_counts[char_modified].docCount >= PARTIAL_INDEX_DOC_THRESHOLD:
                 # Dump the partial index to disk
