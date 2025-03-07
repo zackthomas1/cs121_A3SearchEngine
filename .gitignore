@@ -5,3 +5,5 @@ index/
 .venv/
 .vscode/
 TODO.txt
+developer/
+DEV_test/

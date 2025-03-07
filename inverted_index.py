@@ -2,13 +2,14 @@ import os
 import gc
 import math
 import json
+import sys
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
 from utils import clean_url, compute_tf_idf, get_logger, tokenize_text, is_non_html_extension, is_xml
-
+from datastructures import IndexCounter
 
 # Constants 
-PARTIAL_INDEX_DOC_THRESHOLD = 250 # Dump index to latest JSON file every 100 docs
+PARTIAL_INDEX_DOC_THRESHOLD = 500 # Dump index to latest JSON file every 100 docs
 
 META_DIR            = "index/meta_data"    # "index/doc_id_map"
 PARTIAL_INDEX_DIR   = "index/partial_index" # "index/partial_index"
@@ -25,7 +26,10 @@ class InvertedIndex:
         Prepares to Index data by initializing storage directories and counter/keying variables.
         """
         
-        self.index: dict[str, list[tuple[int, float]]] = defaultdict(list)  # {token: [(docid, freq, tf)]}
+        # Note, modify the Tuple[] in the case you want to add more attributes to the posting
+        self.alphanumerical_index: Dict[str, Dict[str, List[Tuple[int, int, float]]]] = defaultdict(lambda: defaultdict(list)) # {letter/num: {token: [(docid, freq, tf_score)]}}
+        self.alphanumerical_counts: Dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
+        
         self.doc_id_map = {} # {doc_id: url}
         self.doc_count_partial_index = 0
         self.doc_count_total = 0
@@ -37,6 +41,14 @@ class InvertedIndex:
         os.makedirs(META_DIR, exist_ok=True) 
         os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
         os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
+
+        # Initializes directories a-z within the partial index
+        for letter_ascii in range(ord('a'), ord('z') + 1):
+            os.makedirs(PARTIAL_INDEX_DIR + '/' + chr(letter_ascii), exist_ok=True)
+
+        # Initializes directories 0-9 within the partial index
+        for num in range(10):
+            os.makedirs(PARTIAL_INDEX_DIR + '/' + str(num), exist_ok=True)
 
     def build_index(self, folder_path: str) -> None: 
         """
@@ -52,18 +64,14 @@ class InvertedIndex:
                     self.logger.warning(f"File not does not end with .json extention: {file_name}")
                 
                 # Update counters
-                self.doc_count_partial_index += 1       # Used for Partial Indexing
                 self.doc_count_total += 1
-
-                # Partial Indexing: If threshold is reached, store partial index and reset RAM
-                if self.doc_count_partial_index >= PARTIAL_INDEX_DOC_THRESHOLD: 
-                    self.__dump_to_disk()
                 
         # Dump any remaining tokens to disk
-        if self.index: 
-            self.__save_index_to_disk()
-            self.index.clear()
-            gc.collect()
+        for alphanum_char, partial_index in self.alphanumerical_index.items():
+            if partial_index:
+                self.__save_index_to_disk(alphanum_char)
+                self.alphanumerical_index[alphanum_char].clear()
+                gc.collect()
 
         # Save index meta data disk
         self.__save_meta_data_to_disk()
@@ -238,17 +246,49 @@ class InvertedIndex:
         # Extract tokens from html content
         tokens = self.__extract_tokens_with_weighting(content)
 
-        #
+        # Update doc id map
         self.__update_doc_id_map(doc_id, url)
 
         # Tokenize text
         token_freq = InvertedIndex.__construct_token_freq_counter(tokens)
 
         # Update the inverted index with document tokens
-        # self.logger.info(f"Updating inverted index")
+        alphanumerical_indexes_modified = set() # Track which partial indexes are being updated this document
         for token, freq in token_freq.items():
             tf = InvertedIndex.__compute_tf(freq, len(tokens))
-            self.index[token].append((doc_id, tf))
+
+            # Append token to alphanumerical_index
+            # Only process tokens that are alphanumerical
+            if (token[0].lower().isalnum() and token[0].lower().isascii()):
+                first_char = token[0].lower()
+                self.alphanumerical_index[first_char][token].append((doc_id, freq, tf))
+
+                # Track # of documents counted per alphanumerical character
+                alphanumerical_indexes_modified.add(first_char)
+
+        # Note which partial indexes were updated and dump if necessary
+        for char_modified in alphanumerical_indexes_modified:
+            # Get the existing tuple of counts, initialize (0, 0) if none
+            currentIndexCounter = self.alphanumerical_counts.get(char_modified, IndexCounter(docCount = 0, indexNum = 0))
+
+            # Increment number of documents stored per character
+            currentIndexCounter = IndexCounter(docCount = currentIndexCounter.docCount + 1, indexNum=currentIndexCounter.indexNum)
+            self.alphanumerical_counts[char_modified] = currentIndexCounter
+
+            # TODO: Modify to dump on file size rather than document threshold. You should do this by getting the size of the posting list
+            # Dump partial index if it exceeds PARTIAL_INDEX_DOC_THRESHOLD
+            if self.alphanumerical_counts[char_modified].docCount >= PARTIAL_INDEX_DOC_THRESHOLD:
+                # Dump the partial index to disk
+                self.__dump_to_disk(char_modified)
+
+                # Reset count
+                currentIndexCounter = IndexCounter(docCount = 0, indexNum = currentIndexCounter.indexNum + 1)
+                self.alphanumerical_counts[char_modified] = currentIndexCounter
+
+                # Reset the partial index within memory
+                self.alphanumerical_index[char_modified].clear()
+
+
 
     def __update_doc_id_map(self, doc_id: int, url: str) -> None:
         """
@@ -292,38 +332,36 @@ class InvertedIndex:
         with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
             json.dump(existing_map, f, indent=4)
 
-    def __save_index_to_disk(self) -> None: 
+    def __save_index_to_disk(self, partial_index_char: str) -> None: 
         """
         Store the current in-memory partial index to a .txt file.
         Each line in the file is formatted as:
         token;doc_id1,freq1,tf1 doc_id2,freq2,tf2 ...
         """
+        self.logger.info(f"Saving '{partial_index_char}' index to disk...")
 
-        self.logger.info("Saving index to disk...")
-        
         # Create a new .txt partial index file
-        index_file = os.path.join(PARTIAL_INDEX_DIR, f"index_part_{len(os.listdir(PARTIAL_INDEX_DIR)):04d}.txt")
+        filepath = PARTIAL_INDEX_DIR + '/' + partial_index_char
+        index_file = os.path.join(filepath, f"index_part_{self.alphanumerical_counts[partial_index_char].indexNum}.txt")
 
         with open(index_file, "w", encoding="utf-8") as f:
+            partial_index = self.alphanumerical_index[partial_index_char].items()
             # Merge exisiting index with new data from in memory index
-            for token, postings in self.index.items(): 
+            for token, postings in partial_index: 
                 # Serialize posting: each posting is represented as doc_id,freq,tf
                 postings_str = " ".join([f"{docid},{freq},{tf}" for docid, freq, tf in postings])
                 f.write(f"{token};{postings_str}\n")
 
         self.logger.info(f"Partial index saved to {index_file}")
 
-    def __dump_to_disk(self): 
+    def __dump_to_disk(self, partial_index_char: str): 
         """
-        Saves in memory partial inverted index and doc_id map to
-        disk, then clears memory.
+        Saves partial inverted index and doc_id map to
+        disk, then clears them from memory.
         """
-
-        self.__save_index_to_disk()
+        self.__save_index_to_disk(partial_index_char)
         self.__save_doc_id_map_to_disk()
-        self.index.clear()
         self.doc_id_map.clear()
-        self.doc_count_partial_index = 0 
         gc.collect()
 
     def __construct_token_freq_counter(tokens: list[str]) -> Counter:  # NOTE: This is Not a member function
