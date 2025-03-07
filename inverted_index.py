@@ -65,18 +65,14 @@ class InvertedIndex:
                 
                 # TODO: Check if we still need this
                 # Update counters
-                self.doc_count_partial_index += 1       # Used for Partial Indexing
                 self.doc_count_total += 1
-
-                # Partial Indexing: If threshold is reached, store partial index and reset RAM
-                if self.doc_count_partial_index >= PARTIAL_INDEX_DOC_THRESHOLD: 
-                    self.__dump_to_disk()
                 
         # Dump any remaining tokens to disk
-        if self.index: 
-            self.__save_index_to_disk()
-            self.index.clear()
-            gc.collect()
+        for alphanum_char, partial_index in alphanumerical_index.items():
+            if partial_index:
+                self.__save_index_to_disk(alphanum_char)
+                self.alphanumerical_index[alphanum_char].clear()
+                gc.collect()
 
         # Save index meta data disk
         self.__save_meta_data_to_disk()
@@ -251,7 +247,7 @@ class InvertedIndex:
         # Extract tokens from html content
         tokens = self.__extract_tokens_with_weighting(content)
 
-        #
+        # Update doc id map
         self.__update_doc_id_map(doc_id, url)
 
         # Tokenize text
@@ -261,7 +257,6 @@ class InvertedIndex:
         alphanumerical_indexes_modified = set() # Track which partial indexes are being updated this document
         for token, freq in token_freq.items():
             tf = InvertedIndex.__compute_tf(freq, len(tokens))
-            self.index[token].append((doc_id, freq, tf)) # DELETE
 
             # Append token to alphanumerical_index
             # Only process tokens that are alphanumerical
@@ -291,6 +286,8 @@ class InvertedIndex:
                 self.alphanumerical_counts[char_modified] = currentIndexCounter
 
                 # Reset the partial index within memory
+                self.alphanumerical_index[char_modified].clear()
+
 
 
     def __update_doc_id_map(self, doc_id: int, url: str) -> None:
@@ -364,9 +361,7 @@ class InvertedIndex:
         """
         self.__save_index_to_disk(partial_index_char)
         self.__save_doc_id_map_to_disk()
-        self.index.clear()
         self.doc_id_map.clear()
-        self.doc_count_partial_index = 0 
         gc.collect()
 
     def __construct_token_freq_counter(tokens: list[str]) -> Counter:  # NOTE: This is Not a member function
