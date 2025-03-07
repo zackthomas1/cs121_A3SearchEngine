@@ -83,7 +83,7 @@ class InvertedIndex:
             if file_name.startswith("index_part_") and file_name.endswith(".txt"):
                 file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
                 partial_index = defaultdict(list)
-                InvertedIndex.__load_txt(file_path, partial_index)
+                self.__read_partial_index_from_disk(file_path, partial_index)
 
                 # Merge token postings while maintaining order
                 for token, postings in partial_index.items():
@@ -276,18 +276,21 @@ class InvertedIndex:
 
     def __save_doc_id_map_to_disk(self) -> None: 
         """
-        Saves the doc_id-url mapping to disk as .txt file
+        Saves the Doc_ID-URL mapping to disk as a JSON file
         """
-        existing_docidmap = {}
-      
+
         if os.path.exists(DOC_ID_MAP_FILE):
-            InvertedIndex.load_txt_docid_map_file(existing_docidmap)
+            with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
+                existing_map = json.load(f)
+        else: 
+            existing_map = {}
 
         for key, value in self.doc_id_map.items(): 
-            existing_docidmap[key] = value
-
-        # Write to doc_id_map.txt file    
-        InvertedIndex.__dump_txt_docid_map_file(existing_docidmap)
+            existing_map[key] = value
+        
+        # write index to file
+        with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
+            json.dump(existing_map, f, indent=4)
 
     def __save_index_to_disk(self) -> None: 
         """
@@ -386,12 +389,12 @@ class InvertedIndex:
     def __read_json_file(self, file_path: str) -> dict[str, str]:
         """
         Parameters:
-        file_path (str): File path to json document in local file storage
+            file_path (str): File path to json document in local file storage
 
         Returns:
-        dict[str, str]: returns the data stored in the json file as a python dictionary
+            dict[str, str]: returns the data stored in the json file as a python dictionary
         """
-        try:  # NOTE: developer\DEV is given as json files so use json.load() instead of __load_txt() here
+        try:
             with open(file_path, 'r') as file: 
                 data = json.load(file)
                 # self.logger.info(f"Success: Load JSON file: {file_path}")
@@ -406,12 +409,19 @@ class InvertedIndex:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
             return None
        
-    def __load_txt(file_path: str, inverted_index: dict[str, list[tuple[int, float]]]) -> None:
+    def __read_partial_index_from_disk(self, file_path: str) -> dict[str, list[tuple[int, int, float]]]:
         """
-        loads inverted index from designated .txt file (usually used with partial_index)
+        Reads/deserializes partial inverted index from file
+        [LINE FORMAT] token;docid1,freq1,tf1 docid2,freq2,tf2 docid3,freq3,tf3\n
+
+        Parameters: 
+            file_path (str): A file path to a partial index serialized in a .txt file 
+
+        Returns:
+            dict[str, list[tuple[int, int, float]]]:
+
         """
-        
-        # NOTE: [LINE FORMAT] token;docid1,posting1 docid2,posting2 docid3,posting3\n
+        inverted_index = defaultdict(list[tuple[int, int, float]])
         with open(file_path, "r", encoding="utf-8") as f:
             for line in f:
                 # if len(tok_post) < 2:  # NOTE: Omitting bound checking for performance
@@ -419,27 +429,11 @@ class InvertedIndex:
                 token, postings_str = line.strip().split(";")
                 postings = []
                 for posting in postings_str.split():
-                    docid, tfidf = posting.split(",")
-                    postings.append((int(docid), float(tfidf)))
+                    docid, freq, tf = posting.split(",")
+                    postings.append((int(docid), int(freq), float(tf)))
                 inverted_index[token] = postings
 
-
-
-
-    
-    def load_txt_docid_map_file(docid_map: dict[str, str]) -> None:
-        """Loads docid_url map from designated .txt file"""
-        # NOTE: [LINE FORMAT] docid;url\n
-        with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f:
-            for line in f:
-                docid, url = line.strip().split(";")
-                docid_map[docid] = url
-
-    def __dump_txt_docid_map_file(docid_map: dict[str, str]) -> None:
-        """Dumps docid_url map into designated .txt file"""
-        with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
-            for docid, url in docid_map.items():
-                f.write(f"{docid};{url}\n")
+        return inverted_index
 
     # Non-member functions
     @staticmethod
