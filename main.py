@@ -9,12 +9,7 @@ from search import expand_query, search_cosine_similarity  # assuming your searc
 from utils import tokenize_text, stem_tokens
 
 app = Flask(__name__)
-
-# Create and load your inverted index instance.
-# (Assume the index has been built and stored on disk previously.)
-inverted_index = InvertedIndex()
-# For example, if you have a method to load the master index or doc map, you could call it here.
-doc_id_map = inverted_index.get_doc_id_map_from_disk()
+search_engine_logger = get_logger("SEARCHENGINE")
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -34,11 +29,16 @@ def index():
     return render_template('index.html', top_results=top_results)
 
 if __name__ == "__main__":
-    RESULT_NUM = 5
 
-    index = InvertedIndex()
+    # Create and load your inverted index instance.
+    # (Assume the index has been built and stored on disk previously.)
+    inverted_index = InvertedIndex()
+    # For example, if you have a method to load the master index or doc map, you could call it here.
+    doc_id_map = inverted_index.get_doc_id_map_from_disk()
 
-    logger = get_logger("SEARCHER")
+    app.run(debug=True)
+
+    
     input_text = ""
     while (input_text != "quit"):
         print("Please enter the query you'd like to switch (or type 'quit' to exit)")
