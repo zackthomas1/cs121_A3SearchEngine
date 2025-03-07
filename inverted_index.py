@@ -7,9 +7,11 @@ from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
 from utils import clean_url, compute_tf_idf, get_logger, tokenize_text, is_non_html_extension, is_xml
 from datastructures import IndexCounter
+from pympler.asizeof import asizeof
 
 # Constants 
-PARTIAL_INDEX_DOC_THRESHOLD = 500 # Dump index to latest JSON file every 100 docs
+# PARTIAL_INDEX_DOC_THRESHOLD = 500 # Dump index to latest JSON file every 100 docs (NOTE: DEPRECATED)
+PARTIAL_INDEX_SIZE_THRESHOLD_KB = 1000  # set threshold to 1000 KB (margin of error: 300KB)
 
 META_DIR            = "index/meta_data"    # "index/doc_id_map"
 PARTIAL_INDEX_DIR   = "index/partial_index" # "index/partial_index"
@@ -25,10 +27,9 @@ class InvertedIndex:
         """ 
         Prepares to Index data by initializing storage directories and counter/keying variables.
         """
-        
         # Note, modify the Tuple[] in the case you want to add more attributes to the posting
-        self.alphanumerical_index: Dict[str, Dict[str, List[Tuple[int, int, float]]]] = defaultdict(lambda: defaultdict(list)) # {letter/num: {token: [(docid, freq, tf_score)]}}
-        self.alphanumerical_counts: Dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
+        self.alphanumerical_index: dict[str, dict[str, list[tuple[int, int, float]]]] = defaultdict(lambda: defaultdict(list)) # {letter/num: {token: [(docid, freq, tf_score)]}}
+        self.alphanumerical_counts: dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
         
         self.doc_id_map = {} # {doc_id: url}
         self.doc_count_partial_index = 0
@@ -195,19 +196,19 @@ class InvertedIndex:
         doc_norms = defaultdict(float)
         
         # Compute document vector norms by summing squared token weights
-        for token, postings in master_index.items(): 
+        for token, postings in master_index.items():
             doc_freq = len(postings)
-            for posting in postings: 
+            for posting in postings:
                 doc_id, freq, tf = posting
                 weight = compute_tf_idf(tf, doc_freq, total_docs)
                 doc_norms[doc_id] += weight ** 2
 
         # Take square root for each document
-        for doc_id in doc_norms: 
+        for doc_id in doc_norms:
             doc_norms[doc_id] = math.sqrt(doc_norms[doc_id])
 
         # Save computed doc norms to disk
-        with open(DOC_NORMS_FILE, "w", encoding="utf-8") as f: 
+        with open(DOC_NORMS_FILE, "w", encoding="utf-8") as f:
             json.dump(doc_norms, f, indent=4)
 
         self.logger.info(f"Document norms saved to: {DOC_NORMS_FILE}")
@@ -236,7 +237,7 @@ class InvertedIndex:
             return
 
         content = data['content']
-        if not content: 
+        if not content:
             self.logger.warning(f"Skipping empty content: {file_path}")
             return
         if is_xml(content):
@@ -275,9 +276,10 @@ class InvertedIndex:
             currentIndexCounter = IndexCounter(docCount = currentIndexCounter.docCount + 1, indexNum=currentIndexCounter.indexNum)
             self.alphanumerical_counts[char_modified] = currentIndexCounter
 
-            # TODO: Modify to dump on file size rather than document threshold. You should do this by getting the size of the posting list
             # Dump partial index if it exceeds PARTIAL_INDEX_DOC_THRESHOLD
-            if self.alphanumerical_counts[char_modified].docCount >= PARTIAL_INDEX_DOC_THRESHOLD:
+            # TODO: Consider DELETEing ALL codes that calculates/saves "docCount of modified files" like code below for example
+            # NOTE: (DEPRECATED/DELETE ALL RELATED CODE!): if self.alphanumerical_counts[char_modified].docCount >= PARTIAL_INDEX_DOC_THRESHOLD:
+            if (asizeof(self.alphanumerical_index[char_modified]) / 1024) >= PARTIAL_INDEX_SIZE_THRESHOLD_KB:
                 # Dump the partial index to disk
                 self.__dump_to_disk(char_modified)
 
