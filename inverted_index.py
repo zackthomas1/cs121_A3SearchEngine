@@ -25,7 +25,6 @@ class InvertedIndex:
         Prepares to Index data by initializing storage directories and counter/keying variables.
         """
         
-        self.index: dict[str, list[tuple[int, int, float]]] = defaultdict(list)  # {token: [(docid, freq, tf)]} #DELETE
         # Note, modify the Tuple[] in the case you want to add more attributes to the posting
         self.alphanumerical_index: Dict[str, Dict[str, List[Tuple[int, int, float]]]] = defaultdict(lambda: defaultdict(list)) # {letter/num: {token: [(docid, freq, tf_score)]}}
         self.alphanumerical_counts: Dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
@@ -63,7 +62,6 @@ class InvertedIndex:
                 else:
                     self.logger.warning(f"File not does not end with .json extention: {file_name}")
                 
-                # TODO: Check if we still need this
                 # Update counters
                 self.doc_count_total += 1
                 
