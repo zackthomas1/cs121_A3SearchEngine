@@ -1,33 +1,31 @@
-import nltk
-from argparse import ArgumentParser
-from inverted_index import InvertedIndex
+import time
 from utils import get_logger
+from inverted_index import InvertedIndex
+from summary import retrive_relevant_urls
 
-"""
-Entry point
-Call 'python main.py' from the command line to run program
-"""
 if __name__ == "__main__":
-    parser = ArgumentParser()
-    parser.add_argument("--rootdir", type=str, default="developer\DEV")
-    parser.add_argument("--restart", action="store_true", default=False)
-    args = parser.parse_args()
-    
-    # Download NLTK resources
-    nltk.download('punkt_tab')
-    nltk.download('stopwords')
+    RESULT_NUM = 5
 
     index = InvertedIndex()
-    index.build_index(args.rootdir)
-    index.build_master_index()
-    #print(index.token_in_doc_count)
 
-    print(f"[SYSMSG] Testing: Writing docid and tf-idf score for all tokens")
-    # for token, posting in index.index_tfidf.items():
-    #     print(f"{token}:")
-    #     for post in set(posting):
-    #         print(f"   {post[0]} - {post[1]}")
-    print(f"[SYSMSG] Check directory: All tokens written to the file!")
+    logger = get_logger("SEARCHER")
+    input_text = ""
+    while (input_text != "quit"):
+        print("Please enter the query you'd like to switch (or type 'quit' to exit)")
+        input_text = input()
 
-    # print(index.search("Iftekhar Ahmed"))
-    
+        if (input_text != "quit"):
+            print(f'Searching for "{input_text}"')
+
+            # Begin timing after recieving search query
+            start_time = time.perf_counter() * 1000
+
+            logger.info(f'Searching "{input_text}"')
+            results = retrive_relevant_urls(input_text, RESULT_NUM, index, logger)
+            for count, url in enumerate(results, start=1):
+                print(f"{count}: {url}")
+            end_time = time.perf_counter() * 1000
+            logger.info(f"Completed search: {end_time - start_time:.0f} ms")
+
+    print("'quit' detected, exiting...")
+    logger.info("User ended searching.")

@@ -1,64 +1,63 @@
 import os
-import re
 import gc
+import math
 import json
-import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import RegexpTokenizer
-from nltk.tokenize import word_tokenize
-from nltk.stem import PorterStemmer
-from nltk.stem import WordNetLemmatizer
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
-from utils import clean_url, is_non_html_extension, get_logger
-from typing import Dict, List, Tuple
-from math import log as log_e
-import numpy as np
+from utils import clean_url, compute_tf_idf, get_logger, tokenize_text, is_non_html_extension, is_xml
+
 
 # Constants 
-STOPWORDS = set(stopwords.words('english'))
-DOC_THRESHOLD = 250 # Dump index to latest JSON file every 100 docs
-# NEW_FILE_THRESHOLD = 1000   # Create new index file every 1000 docs
-DOC_ID_DIR = "index/doc_id_map"            # "index/doc_id_map"
-PARTIAL_INDEX_DIR = "index/partial_index"  # "index/partial_index"
-MASTER_INDEX_DIR = "index/master_index"    # "index/master_index"
-MASTER_INDEX_FILE = os.path.join(MASTER_INDEX_DIR, "master_index.txt")
-DOC_ID_MAP_FILE = os.path.join(DOC_ID_DIR, "doc_id_map.txt")
+PARTIAL_INDEX_DOC_THRESHOLD = 250 # Dump index to latest JSON file every 100 docs
 
-#
-lemmatizer = WordNetLemmatizer()
-stemmer = PorterStemmer()
-tokenizer = RegexpTokenizer(r'\w+')
+META_DIR            = "index/meta_data"    # "index/doc_id_map"
+PARTIAL_INDEX_DIR   = "index/partial_index" # "index/partial_index"
+MASTER_INDEX_DIR    = "index/master_index"  # "index/master_index"
+
+MASTER_INDEX_FILE   = os.path.join(MASTER_INDEX_DIR, "master_index.json")
+DOC_ID_MAP_FILE     = os.path.join(META_DIR, "doc_id_map.json")
+META_DATA_FILE      = os.path.join(META_DIR, "meta_data.json")
+DOC_NORMS_FILE      = os.path.join(META_DIR, "doc_norms.json")
 
 class InvertedIndex: 
     def __init__(self):
-        """ Prepares to Index data by initializing storage directories and counter/keying variables. """
-        self.index: Dict[str, List[Tuple[int, float]]] = defaultdict(list)  # {token: [(docid, tf_score)]}
-        self.doc_count = 0
-        self.total_doc_count = 0  # total number of documents
-        self.idf_scores: Dict[str, float] = defaultdict(int)  # value is total number of documents where token(key) appears
-        self.index_tfidf: Dict[str, List[Tuple[int, float]]] = defaultdict(list)  # TODO: temporary for testing; memory overload expected (DELETE later)
-        # self.current_index_file = self.get_latest_index_file()
-        self.doc_id_map = {} # map file names to docid
+        """ 
+        Prepares to Index data by initializing storage directories and counter/keying variables.
+        """
+        
+        self.index: dict[str, list[tuple[int, float]]] = defaultdict(list)  # {token: [(docid, freq, tf)]}
+        self.doc_id_map = {} # {doc_id: url}
+        self.doc_count_partial_index = 0
+        self.doc_count_total = 0
+        self.average_doc_length = 0
+
         self.logger = get_logger("INVERTED_INDEX")
-        self.re_alnum = re.compile(r"^[a-z0-9]+$")
 
         # Initializes directories for index storage
-        os.makedirs(DOC_ID_DIR, exist_ok=True) 
+        os.makedirs(META_DIR, exist_ok=True) 
         os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
         os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
 
-    def build_index(self, folder_path): 
+    def build_index(self, folder_path: str) -> None: 
         """
         Process all JSON files in folder and build index.
         """
-        doc_id = 0
+
         for root, dirs, files in os.walk(folder_path):
             for file_name in files:
-                self.logger.info(f"Indexing doc: {doc_id}")
+                self.logger.info(f"Indexing doc: {self.doc_count_total}")
                 if file_name.endswith(".json"):
-                    self.__process_document(os.path.join(root, file_name), doc_id)
-                doc_id += 1
+                    self.__process_document(os.path.join(root, file_name), self.doc_count_total)
+                else:
+                    self.logger.warning(f"File not does not end with .json extention: {file_name}")
+                
+                # Update counters
+                self.doc_count_partial_index += 1       # Used for Partial Indexing
+                self.doc_count_total += 1
+
+                # Partial Indexing: If threshold is reached, store partial index and reset RAM
+                if self.doc_count_partial_index >= PARTIAL_INDEX_DOC_THRESHOLD: 
+                    self.__dump_to_disk()
                 
         # Dump any remaining tokens to disk
         if self.index: 
@@ -66,18 +65,17 @@ class InvertedIndex:
             self.index.clear()
             gc.collect()
 
-        # Calculate IDF Score and Update self.idf_scores on Live
-            # ln(# of doc / (denom + 1)) ; add +1 to smoothen value & prevent error (division by zero) in case
-            # Use numpy np.float32 to cut-off 50% RAM take-up (without it's 64 bits)
-            # Round to 4 decimal precision for JSON file saving; Wouldn't make difference on ranking performance
-        for token, denom in self.idf_scores.items():
-            self.idf_scores[token] = np.float32(round(np.log(self.total_doc_count / (denom + 1)), 4))
+        # Save index meta data disk
+        self.__save_meta_data_to_disk()
 
-    def build_master_index(self):
-        """Combines all partial indexes into a single master index while preserving order."""
-        self.logger.info(f"Building Master index...")
+    def build_master_index(self) -> None:
+        """
+        Combines all partial indexes into a single master index while preserving order.
+        """
 
         master_index = defaultdict(list)
+
+        self.logger.info(f"Building Master index...")
 
         # Iterate through all partial index files
         for file_name in sorted(os.listdir(PARTIAL_INDEX_DIR)):  # Ensure order is maintained
@@ -91,78 +89,198 @@ class InvertedIndex:
                 for token, postings in partial_index.items():
                     master_index[token].extend(postings)
 
-        # Calculate TF-IDF Score and Save to TF-IDF Score Dictionary for Now
-        # TODO: consider where to save this value (RAM or DISC? Inside master_index Posting or Separate Data Structure?)
-        for token, posting in master_index.items():
-            for post in posting:
-                #print(post[0], f"{round(np.float32(post[1]) * self.idf_scores[token], 4):.4f}")
-                #print(type(np.float32(post[1])), type(self.idf_scores[token]), type(np.float32(post[1]) * self.idf_scores[token]))
-                self.index_tfidf[token].append(
-                    ( post[0], "{:.4f}".format(np.float32(post[1]) * self.idf_scores[token]) ))
-
         # Save master index to disk
-        InvertedIndex.__dump_txt(MASTER_INDEX_FILE, master_index)
+        self.logger.info(f"Saving to file...")
+        with open(MASTER_INDEX_FILE, "w", encoding="utf-8") as f:
+            json.dump(master_index, f, indent=4)
 
         self.logger.info(f"Master index built successfully and saved to {MASTER_INDEX_FILE}")
     
-    def search(self, query): 
-        self.logger.info(f"Searching for query tokens in inverted index: {query}")
-        tokens = InvertedIndex.__stem_tokens(self.__tokenize_text(query))
-        return self.__merge_from_disk(tokens)
+    def construct_merged_index_from_disk(self, query_tokens: list[str]) -> dict[str, list[tuple[int, int, float]]]:
+        """
+        Constructs inverted index containing only query tokens from partial inverted index stored on disk
+        
+        Parameters:
+            query_tokens (list[str]): 
 
-    def __process_document(self, file_path, doc_id):
-        # Read File to Process On
+        Returns:
+            dict[str, list[tuple[int, int, float]]]: inverted index which contains only the query tokens entries from the partial index
+        """
+        merged_index = {}
+        for file_name in os.listdir(PARTIAL_INDEX_DIR): 
+            file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
+            with open(file_path, "r", encoding="utf-8") as f: 
+                index_part = json.load(f)
+
+            for token in query_tokens: 
+                if token in index_part: 
+                    if token in merged_index: 
+                        merged_index[token].extend(index_part[token])
+                    else: 
+                        merged_index[token] = index_part[token]
+
+        return merged_index
+    
+    def load_doc_id_map_from_disk(self) -> dict[str, str]:
+        """Load the doc_id map to get urls"""
+
+        if os.path.exists(DOC_ID_MAP_FILE):
+            with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
+                doc_id_map = json.load(f)
+        else:
+            self.logger.error("Unable to load doc id map. Path does not exist: {DOC_ID_MAP_FILE}")
+            doc_id_map = {}
+
+        return doc_id_map
+    
+    def load_doc_norms_from_disk(self) -> dict[int, float]:
+        """
+        Loads the precomputed document norms from disk.
+
+        Returns:
+            dict[int, float]: A dictionary mapping document IDs(int) to their norm values(float).
+        """
+
+        if os.path.exists(DOC_NORMS_FILE):
+            with open(DOC_NORMS_FILE, "r", encoding="utf-8") as f:
+                doc_norms = json.load(f)
+
+            # Coverty keys to int and values to float
+            doc_norms = {int(key): float(value) for key, value in doc_norms.items()}
+        else:
+            self.logger.error("Unable to load document norms. Path does not exist: {DOC_NORMS_FILE}")
+            doc_norms = {}
+
+        return doc_norms
+
+    def load_master_index_from_disk(self) -> dict[str, list[tuple[int, int, float]]]:
+        """
+        Load master index from dist
+
+        Returns: 
+            dict[str, list[tuple[int, int, float]]]: A dictionary mapping token(str) to postings(list[tuple[int, int, float])
+        """
+        
+        if os.path.exists(MASTER_INDEX_FILE):
+            with open(MASTER_INDEX_FILE, "r", encoding="utf-8") as f:
+                index_data = json.load(f)
+        else:
+            self.logger.error("Unable to load master index. Path does not exist: {MASTER_INDEX_FILE}")
+            index_data = {}
+
+        return index_data
+
+    def precompute_document_norms(self) -> None:
+        """
+        Precomputes the Euclidean norm of each document's vector using tf-idf weighting. 
+
+        The norm of a document is the squer root of the sum of squared tf-idf weights
+        of all the tokens which are in that document. 
+
+        Store precomputed norms in JSON file for look up at query time.
+        """
+
+        self.logger.info("Precomputing document normals...")
+
+        master_index = self.load_master_index_from_disk()
+        total_docs = self.doc_count_total
+        doc_norms = defaultdict(float)
+        
+        # Compute document vector norms by summing squared token weights
+        for token, postings in master_index.items(): 
+            doc_freq = len(postings)
+            for posting in postings: 
+                doc_id, freq, tf = posting
+                weight = compute_tf_idf(tf, doc_freq, total_docs)
+                doc_norms[doc_id] += weight ** 2
+
+        # Take square root for each document
+        for doc_id in doc_norms: 
+            doc_norms[doc_id] = math.sqrt(doc_norms[doc_id])
+
+        # Save computed doc norms to disk
+        with open(DOC_NORMS_FILE, "w", encoding="utf-8") as f: 
+            json.dump(doc_norms, f, indent=4)
+
+        self.logger.info(f"Document norms saved to: {DOC_NORMS_FILE}")
+        
+    def __process_document(self, file_path: str, doc_id: int) -> None:
+        """
+        Takes a file path to a document which stores an html page and updates the inverted index with tokens extracted from text content.
+        Reads the file from disk. Extracts the html content. Updates the doc_id-url map. Tokenize the textual content.
+        Update the inverted index with
+
+        Parameters:
+            file_path (str): The absolute file path to the document in the local file storage system
+            doc_id (int): The unique id for the document at the provided file location 
+        """
+
+        # Read json file from disk
         data = self.__read_json_file(file_path)
         if not data:
             self.logger.warning(f"Skipping empty JSON file: {file_path}")
             return
+        
+        # Extract url and check that is valid
         url = clean_url(data['url'])
         if is_non_html_extension(url):
             self.logger.warning(f"Skipping url with non html extension")
             return
-        # if not is_unique_url(url):
-        #     self.logger.warning(f"Skipping non-unique Url: {os.path.join(root, file)} - {url}")
-        #     return
 
-        # Text Extraction
-        text = self.__extract_text_from_html_content(data['content'])
-        if not text: 
-            self.logger.warning(f"Skipping empty HTML text content: {file_path}")
+        content = data['content']
+        if not content: 
+            self.logger.warning(f"Skipping empty content: {file_path}")
+            return
+        if is_xml(content):
+            self.logger.warning(f"Skipping content is XML: {file_path}")
             return
 
+        # Extract tokens from html content
+        tokens = self.__extract_tokens_with_weighting(content)
+
+        #
         self.__update_doc_id_map(doc_id, url)
 
-        # Text Preprocessing (Tokenize & Stem) and Conut Token Frequency
-        # self.logger.info(f"Tokenizing document content")
-        tokens: List[str] = InvertedIndex.__stem_tokens(self.__tokenize_text(text))
-        token_freq: Dict[str, int] = InvertedIndex.__construct_token_freq_counter(tokens)
+        # Tokenize text
+        token_freq = InvertedIndex.__construct_token_freq_counter(tokens)
 
+        # Update the inverted index with document tokens
         # self.logger.info(f"Updating inverted index")
-
-        # IDF-Score's Denominator Value Calculation
-        for unique_token in set(tokens):
-            self.idf_scores[unique_token] += 1
-        
-        # Inverted Index Construction and TF-Score Calculation
-        word_count = len(tokens)  # Get total number of words in the current document
         for token, freq in token_freq.items():
-            tf_score = round((freq / word_count), 4)  # Calculate tf score: (word freq in cur doc / word cnt of cur doc)
-            self.index[token].append((doc_id, tf_score))
+            tf = InvertedIndex.__compute_tf(freq, len(tokens))
+            self.index[token].append((doc_id, freq, tf))
 
-        # Update Counters
-        self.doc_count += 1        # Used for Partial Indexing
-        self.total_doc_count += 1  # Used for IDF score calculation
+    def __update_doc_id_map(self, doc_id: int, url: str) -> None:
+        """
+        Updates the document id-url index with the provided doc_id url pair.
+        Document id-url index records which url is associated with each doc_id number
 
-        # Partial Indexing: If threshold is reached, store partial index and reset RAM
-        if self.doc_count >= DOC_THRESHOLD: 
-            self.__dump_to_disk()
+        Parameters:
+        doc_id (int): the unique identifier of the document
+        url (str): url web address of the related document
+        """
 
-    def __update_doc_id_map(self, doc_id, url): 
         self.doc_id_map[doc_id] = url
 
-    def __save_doc_id_map_to_disk(self): 
-        """Saves the Doc_ID-URL mapping to disk as .txt file"""
-        existing_docidmap = {}
+
+    def __save_meta_data_to_disk(self) -> None: 
+        """"""
+
+        meta_data = {
+            "doc_count_total": self.doc_count_total,
+            "average_doc_length": self.average_doc_length
+        }
+        
+        # write index to file
+        with open(META_DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(meta_data, f, indent=4)
+
+    def __save_doc_id_map_to_disk(self) -> None: 
+        """
+        Saves the doc_id-url mapping to disk as .txt file
+        """
+       existing_docidmap = {}
+      
         if os.path.exists(DOC_ID_MAP_FILE):
             InvertedIndex.load_txt_docid_map_file(existing_docidmap)
 
@@ -172,13 +290,15 @@ class InvertedIndex:
         # Write to doc_id_map.txt file    
         InvertedIndex.__dump_txt_docid_map_file(existing_docidmap)
 
+    def __save_index_to_disk(self) -> None: 
+        """
+        Store current index to .txt file
+        """
 
-    def __save_index_to_disk(self): 
-        """Store current index to .txt file"""
         self.logger.info("Dumping index to disk")
         
-        # Create a new .json partial index file
-        index_file = os.path.join(PARTIAL_INDEX_DIR, f"index_part_{len(os.listdir(PARTIAL_INDEX_DIR))}.txt")
+        # Create a new .txt partial index file
+        index_file = os.path.join(PARTIAL_INDEX_DIR, f"index_part_{len(os.listdir(PARTIAL_INDEX_DIR)):04d}.txt")
 
         # Check if .txt partial index file already existing index
         existing_data = defaultdict(list)
@@ -199,70 +319,83 @@ class InvertedIndex:
     def __dump_to_disk(self): 
         """
         Saves in memory partial inverted index and doc_id map to
-        disk, then clears memory. 
+        disk, then clears memory.
         """
+
         self.__save_index_to_disk()
         self.__save_doc_id_map_to_disk()
         self.index.clear()
         self.doc_id_map.clear()
-        self.doc_count = 0 
+        self.doc_count_partial_index = 0 
         gc.collect()
 
-    def __merge_from_disk(self, query_tokens):
-        """Loads only relevant part of index from disk for a given query."""
-        merged_index = {}
-        for file_name in os.listdir(PARTIAL_INDEX_DIR): 
-            file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
-            index_part = defaultdict(list)
-            InvertedIndex.__load_txt(file_path, index_part)
-            for token in query_tokens: 
-                if token in index_part: 
-                    if token in merged_index:
-                        merged_index[token].extend(index_part[token])
-                    else: 
-                        merged_index[token] = index_part[token]
-        return merged_index
+    def __construct_token_freq_counter(tokens: list[str]) -> Counter:  # NOTE: This is Not a member function
+        """
+        Counts the apparence frequency a token in a list of tokens from a single document
+        
+        Parameters:
+        tokens (list[str]): A list of tokens from a single document
 
-    def __construct_token_freq_counter(tokens) -> Counter:  # NOTE: This is Not a member function
+        Returns:
+        Counter: A list of tuple pairs the token string and an integer of the frequency of token in tokens list
+        """
+        
         counter = Counter()
         counter.update(tokens)
         return counter
 
-    def __lemmatize_tokens(tokens: list[str]) -> list[str]:    # NOTE: This is Not a member function
-        return [lemmatizer.lemmatize(token) for token in tokens]
-
-    def __stem_tokens(tokens: list[str]) -> list[str]:    # NOTE: This is Not a member function
-        """Apply porters stemmer to tokens"""
-        return [stemmer.stem(token) for token in tokens]
-
-    def __tokenize_text(self, text: str) -> list[str]:
-        """Use nltk to tokenize text. Remove stop words and non alphanum"""
-        tokens =  word_tokenize(text.lower())
-        # NOTE: Why not using built-in ".isalnum()" which is faster?
-        return [token for token in tokens if self.re_alnum.match(token) and token not in STOPWORDS]
-
-    def __extract_text_from_html_content(self, content: str) -> list[str]: 
+    def __extract_tokens_with_weighting(self, content: str, weigh_factor: int = 2) -> list[str]: 
         """
+        Extract toekns from HTML content and applies extra wieght to tokens that 
+        appear in important HTML tags (titles, h1, h2, h3, and strong). 
+
+        Parameters:
+            text (str): html content
+            weight_factor (int): how much importance to assign tags
+
+        Returns:
+            list[str]: A combined list of tokens. Toeksn from important sections are replicated 
         """
+
         try:
-            #TODO: Check that the content is html before parsing. Document content may also be xml
-
             # Get the text from the html response
             soup = BeautifulSoup(content, 'html.parser')
 
             # Remove the text of CSS, JS, metadata, alter for JS, embeded websites
-            for markup in soup.find_all(["style", "script", "meta", "noscript", "iframe"]):  
-                markup.decompose()  # remove all markups stated above
+            for tag in soup.find_all(["style", "script", "meta", "noscript", "iframe"]):  
+                tag.decompose()  # remove all markups stated above
             
             # soup contains only human-readable texts now to be compared near-duplicate
-            text = soup.get_text(separator=" ", strip=True)
-            return text
+            general_text = soup.get_text(separator=" ", strip=True)
+            general_tokens = tokenize_text(general_text)
+
+            # Extract important text from specific tags and tokenize 
+            important_tags = ["title", "h1", "h2", "h3", "strong"]
+            important_text = ""
+            for tag in important_tags: 
+                for element in soup.find_all(tag): 
+                    important_text += " " + element.get_text(separator=" ", strip=True)
+
+            important_tokens = tokenize_text(important_text)
+
+            # Weight important tokens by replicating them
+            # Tokens from the important sections are multiplied by a weight factor. 
+            # This effectively increases their frequency count.
+            
+            weighted_tokens = general_tokens + (important_tokens * weigh_factor)
+
+            return weighted_tokens
         except Exception as e:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
             return None 
     
     def __read_json_file(self, file_path: str) -> dict[str, str]:
         """
+        Parameters:
+        file_path (str): File path to json document in local file storage
+
+        Returns:
+        dict[str, str]: returns the data stored in the json file as a python dictionary
         """
         try:  # NOTE: developer\DEV is given as json files so use json.load() instead of __load_txt() here
             with open(file_path, 'r') as file: 
@@ -278,8 +411,7 @@ class InvertedIndex:
         except Exception as e:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
             return None
-        
-        
+       
     def __load_txt(file_path: str, inverted_index: Dict[str, List[Tuple[int, float]]]) -> None:
         """Dumps inverted index from designated .txt file (usually used with partial_index)"""
         # NOTE: [LINE FORMAT] token;docid1,posting1 docid2,posting2 docid3,posting3\n
@@ -311,31 +443,14 @@ class InvertedIndex:
                 docid, url = line.strip().split(";")
                 docid_map[docid] = url
 
+    # Non-member functions
+    @staticmethod
+    def __compute_tf(term_freq: int, doc_length: int)->int: 
+        return term_freq / doc_length
 
     def __dump_txt_docid_map_file(docid_map: Dict[str, str]) -> None:
         """Dumps docid_url map into designated .txt file"""
         with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
             for docid, url in docid_map.items():
                 f.write(f"{docid};{url}\n")
-    
-
-    """
-    # Pseudocode for tf-idf processing
-    invIndex = InvertedIndex()
-    number_of_doc_containing_token = {token: num_TinD}  // num_TinD: number of documents that contain token
-    idf_score = {token: idf_score}
-
-    for file in all_files:
-        for token in text:  // text = file.extract["Content"]
-            during building invIndex, save tf_score instead of frequency:
-                tf_score = number_of_token_in_text / number_of_all_words_in_text
-        
-        if token in text:
-            number_of_doc_containing_token[token] += 1
-    
-    for token, number in number_of_doc_containing_token:
-        idf_val = math.log(CONST_TOTAL_NUM_DOC / (1 + number))
-        idf_score[token] = idf_val    // Approach 1: Having separate invIndex and idfTable
-        invIndex[token][0] = idf_val  // Approach 2: Change data structure so that it saves idf value in InvertedIndex
-                                      //    Final Structure:  {token: [ idf, [ [docID, tf], ... ] ]}
-    """
+  
