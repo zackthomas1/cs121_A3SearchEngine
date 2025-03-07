@@ -2,10 +2,10 @@ import os
 import gc
 import math
 import json
+import simhash
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
 from utils import clean_url, compute_tf_idf, get_logger, tokenize_text, is_non_html_extension, is_xml
-
 
 # Constants 
 PARTIAL_INDEX_DOC_THRESHOLD = 250 # Dump index to latest JSON file every 100 docs
@@ -27,6 +27,7 @@ class InvertedIndex:
         
         self.index: dict[str, list[tuple[int, int, float]]] = defaultdict(list)  # {token: [(docid, freq, tf)]}
         self.doc_id_map = {} # {doc_id: url}
+        self.visited_content_simhashes = []
         self.doc_count_partial_index = 0
         self.doc_count_total = 0
 
@@ -238,6 +239,18 @@ class InvertedIndex:
 
         # Extract tokens from html content
         tokens = self.__extract_tokens_with_weighting(content)
+
+        # Check for near and exact duplicate content (Simhash); Simhash also covers exact duplicate which has dist == 0
+        current_page_hash = simhash.compute_simhash(tokens)
+        for visited_page_hash in self.visited_content_simhashes:
+            dist = simhash.calculate_hash_distance(current_page_hash, visited_page_hash)
+            if dist == 0:  # Exact-duplicate
+                self.logger.warning(f"Skipping URL {url}: Exact Duplicate Content Match with Dist={dist}")
+                return []
+            elif dist < simhash.THRESHOLD:  # Near-duplicate
+                self.logger.warning(f"Skipping URL {url}: Near Duplicate Content Match with Dist={dist}")
+                return []
+        self.visited_content_simhashes.add(current_page_hash)
 
         # Update doc id map
         self.__update_doc_id_map(doc_id, url)
