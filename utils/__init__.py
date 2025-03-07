@@ -109,6 +109,7 @@ def write_json_file(file_path: str, data: dict, logger: Logger) -> None:
         logger (Logger):
     """
     try:
+        logger.info(f"Writing file...")
         new_data = {}
         # Check if there is already data save in the file
         if os.path.exists(file_path):

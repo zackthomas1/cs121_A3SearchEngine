@@ -73,6 +73,8 @@ class InvertedIndex:
             if partial_index:
                 self.__save_index_to_disk(alphanum_char)
                 self.alphanumerical_index[alphanum_char].clear()
+                self.__save_doc_id_map_to_disk()
+                self.doc_id_map.clear()
                 gc.collect()
 
         # Save index meta data disk
@@ -89,23 +91,18 @@ class InvertedIndex:
 
         # Iterate through all partial index files
         for file_name in sorted(os.listdir(PARTIAL_INDEX_DIR)):  # Ensure order is maintained
-            self.logger.info(f"Adding: {file_name}")
-            
             file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
+            self.logger.info(f"Adding: {file_path}")
+
             partial_index = self.__read_partial_index_from_disk(file_path)
 
             # Merge token postings while maintaining order
             for token, postings in partial_index.items():
                 master_index[token].extend(postings)
 
-        # Save master index to disk
-        self.logger.info(f"Saving to file...")
-        with open(MASTER_INDEX_FILE, "w", encoding="utf-8") as f:
-            json.dump(master_index, f, indent=4)
-
-        self.logger.info(f"Master index built successfully and saved to {MASTER_INDEX_FILE}")
+        write_json_file(MASTER_INDEX_FILE, master_index, self.logger)
     
-    def construct_merged_index_from_disk(self, query_tokens: list[str]) -> dict[str, list[tuple[int, int, float]]]:
+    def construct_merged_index_from_disk(self, query_tokens: list[str]) -> dict:
         """
         Constructs inverted index containing only query tokens from partial inverted index stored on disk
         
@@ -113,22 +110,23 @@ class InvertedIndex:
             query_tokens (list[str]): 
 
         Returns:
-            dict[str, list[tuple[int, int, float]]]: inverted index which contains only the query tokens entries from the partial index
+            dict: inverted index which contains only the query tokens entries from the partial index
         """
-        merged_index = {}
-        for file_name in os.listdir(PARTIAL_INDEX_DIR): 
-            file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
-            
-            
-            with open(file_path, "r", encoding="utf-8") as f: 
-                index_part = json.load(f)
 
-            for token in query_tokens: 
-                if token in index_part: 
+        merged_index = {}
+
+        for token in query_tokens:
+            partial_index_char = token[0]
+            for file_name in os.listdir(PARTIAL_INDEX_DIR + '/' + partial_index_char):           
+                # Read in partial index from file
+                partial_index = self.__read_partial_index_from_disk(os.path.join(PARTIAL_INDEX_DIR, file_name))
+                
+                # Search for token in partial index and add found query tokens to merged_index
+                if token in partial_index: 
                     if token in merged_index: 
-                        merged_index[token].extend(index_part[token])
+                        merged_index[token].extend(partial_index[token])
                     else: 
-                        merged_index[token] = index_part[token]
+                        merged_index[token] = partial_index[token]
 
         return merged_index
 
@@ -306,7 +304,7 @@ class InvertedIndex:
         """
 
         meta_data = {
-            "max_doc_id" : self.doc_id,
+            "corpus_size" : self.doc_id,
             "total_doc_indexed": self.total_doc_indexed
         }
         write_json_file(META_DATA_FILE, meta_data, self.logger)
@@ -395,7 +393,7 @@ class InvertedIndex:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
             return None
     
-    def __read_partial_index_from_disk(self, file_path: str) -> dict[str, list[tuple[int, int, float]]]:
+    def __read_partial_index_from_disk(self, file_path: str) -> dict:
         """
         Reads/deserializes partial inverted index from file
         [LINE FORMAT] token;docid1,freq1,tf1 docid2,freq2,tf2 docid3,freq3,tf3\n
