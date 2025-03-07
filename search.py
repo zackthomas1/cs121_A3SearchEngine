@@ -10,6 +10,10 @@ EPSILON = 0.00001
 
 search_logger = get_logger("SEARCH")
 
+#TODO: Implement query token stemming
+
+#TODO: Implement stop word remove from query
+
 def expand_query(query: str, limit: int = 2) -> str: 
     """
     Expands input query by adding synonyms using nltk wordnet
