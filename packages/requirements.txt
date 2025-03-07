@@ -2,3 +2,4 @@ beautifulsoup4
 nltk
 urllib3
 numpy
+flask
