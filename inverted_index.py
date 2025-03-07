@@ -6,7 +6,7 @@ import simhash
 import sys
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
-from utils import clean_url, compute_tf_idf, get_logger, tokenize_text, is_non_html_extension, is_xml
+from utils import clean_url, compute_tf_idf, get_logger, read_json_file, tokenize_text, is_non_html_extension, is_xml
 from datastructures import IndexCounter
 
 # Constants 
@@ -28,8 +28,8 @@ class InvertedIndex:
         """
         
         # Note, modify the Tuple[] in the case you want to add more attributes to the posting
-        self.alphanumerical_index: Dict[str, Dict[str, List[Tuple[int, int, float]]]] = defaultdict(lambda: defaultdict(list)) # {letter/num: {token: [(docid, freq, tf_score)]}}
-        self.alphanumerical_counts: Dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
+        self.alphanumerical_index: dict[str, dict[str, list[tuple[int, int, float]]]] = defaultdict(lambda: defaultdict(list)) # {letter/num: {token: [(docid, freq, tf_score)]}}
+        self.alphanumerical_counts: dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
         
         self.doc_id_map = {} # {doc_id: url}
         self.visited_content_simhashes = set()
@@ -133,15 +133,7 @@ class InvertedIndex:
     
     def load_doc_id_map_from_disk(self) -> dict[str, str]:
         """Load the doc_id map to get urls"""
-
-        if os.path.exists(DOC_ID_MAP_FILE):
-            with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
-                doc_id_map = json.load(f)
-        else:
-            self.logger.error("Unable to load doc id map. Path does not exist: {DOC_ID_MAP_FILE}")
-            doc_id_map = {}
-
-        return doc_id_map
+        return read_json_file(DOC_ID_MAP_FILE)
     
     def load_doc_norms_from_disk(self) -> dict[int, float]:
         """
@@ -150,35 +142,18 @@ class InvertedIndex:
         Returns:
             dict[int, float]: A dictionary mapping document IDs(int) to their norm values(float).
         """
-
-        try:
-            with open(DOC_NORMS_FILE, "r", encoding="utf-8") as f:
-                doc_norms = json.load(f)
-
-            # Coverty keys to int and values to float
-            doc_norms = {int(key): float(value) for key, value in doc_norms.items()}
-        except Exception as e:
-            self.logger.error("Unable to load document norms. Path does not exist: {DOC_NORMS_FILE}")
-            doc_norms = {}
-
+        doc_norms = read_json_file(DOC_NORMS_FILE)
+        doc_norms = {int(key): float(value) for key, value in doc_norms.items()}
         return doc_norms
 
-    def load_master_index_from_disk(self) -> dict[str, list[tuple[int, int, float]]]:
+    def load_master_index_from_disk(self) -> dict[str, list]:
         """
         Load master index from dist
 
         Returns: 
-            dict[str, list[tuple[int, int, float]]]: A dictionary mapping token(str) to postings(list[tuple[int, int, float])
+            dict[str, list]: A dictionary mapping token(str) to postings(list[tuple[int, int, float])
         """
-        
-        try:
-            with open(MASTER_INDEX_FILE, "r", encoding="utf-8") as f:
-                index_data = json.load(f)
-        except Exception as e:
-            self.logger.error("Unable to load master index. Path does not exist: {MASTER_INDEX_FILE}")
-            index_data = {}
-
-        return index_data
+        return read_json_file(MASTER_INDEX_FILE)
 
     def precompute_document_norms(self) -> None:
         """
@@ -230,7 +205,7 @@ class InvertedIndex:
         """
 
         # Read json file from disk
-        data = self.__read_json_file(file_path)
+        data = self.read_json_file(file_path)
         if not data:
             self.logger.warning(f"Skipping empty JSON file: {file_path}")
             return
@@ -446,31 +421,8 @@ class InvertedIndex:
             return weighted_tokens
         except Exception as e:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
-            return None 
-    
-    def __read_json_file(self, file_path: str) -> dict[str, str]:
-        """
-        Parameters:
-            file_path (str): File path to json document in local file storage
-
-        Returns:
-            dict[str, str]: returns the data stored in the json file as a python dictionary
-        """
-        try:
-            with open(file_path, 'r') as file: 
-                data = json.load(file)
-                # self.logger.info(f"Success: Load JSON file: {file_path}")
-                return data
-        except FileNotFoundError:
-            self.logger.error(f"File note found at path: {file_path}")
-            return None 
-        except json.JSONDecodeError: 
-            self.logger.error(f"Invalid JSON format in file:  {file_path}")
-            return None 
-        except Exception as e:
-            self.logger.error(f"An unexpected error has orccurred: {e}") 
             return None
-       
+    
     def __read_partial_index_from_disk(self, file_path: str) -> dict[str, list[tuple[int, int, float]]]:
         """
         Reads/deserializes partial inverted index from file
@@ -504,3 +456,4 @@ class InvertedIndex:
     @staticmethod
     def __compute_tf(term_freq: int, doc_length: int)->int: 
         return term_freq / doc_length
+    

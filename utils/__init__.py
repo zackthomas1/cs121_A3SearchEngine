@@ -1,7 +1,9 @@
 import re
 import os
 import math
+import json
 import logging
+from logging import Logger
 from urllib.parse import urlparse
 from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
@@ -76,6 +78,29 @@ def lemmatize_tokens(tokens: list[str]) -> list[str]:
         list[str]: a lemmatized list of tokens
     """
     return [lemmatizer.lemmatize(token) for token in tokens]
+
+def read_json_file(file_path: str, logger: Logger) -> dict[str, str]:
+    """
+    Parameters:
+        file_path (str): File path to json document in local file storage
+
+    Returns:
+        dict[str, str]: returns the data stored in the json file as a python dictionary
+    """
+    try:
+        with open(file_path, 'r') as file: 
+            data = json.load(file)
+            # self.logger.info(f"Success: Load JSON file: {file_path}")
+            return data
+    except FileNotFoundError:
+        logger.error(f"File note found at path: {file_path}")
+        return None 
+    except json.JSONDecodeError: 
+        logger.error(f"Invalid JSON format in file:  {file_path}")
+        return None 
+    except Exception as e:
+        logger.error(f"An unexpected error has orccurred: {file_path} - {e}") 
+        return None
 
 def stem_tokens(tokens: list[str]) -> list[str]:
     """
