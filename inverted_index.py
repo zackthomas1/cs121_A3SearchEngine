@@ -69,13 +69,8 @@ class InvertedIndex:
                 self.doc_id += 1
                 
         # Dump any remaining tokens to disk
-        for alphanum_char, partial_index in self.alphanumerical_index.items():
-            if partial_index:
-                self.__save_index_to_disk(alphanum_char)
-                self.alphanumerical_index[alphanum_char].clear()
-                self.__save_doc_id_map_to_disk()
-                self.doc_id_map.clear()
-                gc.collect()
+        alphanumerical_indexes_modified = [alphanum_char for alphanum_char, partial_index in self.alphanumerical_index.items() if partial_index]
+        self.__dump_to_disk(set(alphanumerical_indexes_modified), threshhold=0)
 
         # Save index meta data disk
         self.__save_meta_data_to_disk()
@@ -90,15 +85,17 @@ class InvertedIndex:
         self.logger.info(f"Building Master index...")
 
         # Iterate through all partial index files
-        for file_name in sorted(os.listdir(PARTIAL_INDEX_DIR)):  # Ensure order is maintained
-            file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
-            self.logger.info(f"Adding: {file_path}")
+        for dir_name in sorted(os.listdir(PARTIAL_INDEX_DIR)):  # Ensure order is maintained
+            dir_path = os.path.join(PARTIAL_INDEX_DIR, dir_name)
+            for file_name in os.listdir(dir_path):
+                file_path = os.path.join(dir_path, file_name)
+                self.logger.info(f"Adding: {file_path}")
 
-            partial_index = self.__read_partial_index_from_disk(file_path)
+                partial_index = self.__read_partial_index_from_disk(file_path)
 
-            # Merge token postings while maintaining order
-            for token, postings in partial_index.items():
-                master_index[token].extend(postings)
+                # Merge token postings while maintaining order
+                for token, postings in partial_index.items():
+                    master_index[token].extend(postings)
 
         write_json_file(MASTER_INDEX_FILE, master_index, self.logger)
     
@@ -117,16 +114,18 @@ class InvertedIndex:
 
         for token in query_tokens:
             partial_index_char = token[0]
-            for file_name in os.listdir(PARTIAL_INDEX_DIR + '/' + partial_index_char):           
-                # Read in partial index from file
-                partial_index = self.__read_partial_index_from_disk(os.path.join(PARTIAL_INDEX_DIR, file_name))
-                
-                # Search for token in partial index and add found query tokens to merged_index
-                if token in partial_index: 
-                    if token in merged_index: 
-                        merged_index[token].extend(partial_index[token])
-                    else: 
-                        merged_index[token] = partial_index[token]
+            dir_name = os.path.join(PARTIAL_INDEX_DIR + '/' + partial_index_char)
+            for root, dirs, files in os.walk(dir_name):
+                for file_name in files:
+                    # Read in partial index from file
+                    partial_index = self.__read_partial_index_from_disk(os.path.join(dir_name, file_name))
+                    
+                    # Search for token in partial index and add found query tokens to merged_index
+                    if token in partial_index: 
+                        if token in merged_index: 
+                            merged_index[token].extend(partial_index[token])
+                        else: 
+                            merged_index[token] = partial_index[token]
 
         return merged_index
 
@@ -261,28 +260,8 @@ class InvertedIndex:
 
                 # Track # of documents counted per alphanumerical character
                 alphanumerical_indexes_modified.add(first_char)
-
-        # Note which partial indexes were updated and dump if necessary
-        for char_modified in alphanumerical_indexes_modified:
-            # Get the existing tuple of counts, initialize (0, 0) if none
-            currentIndexCounter = self.alphanumerical_counts.get(char_modified, IndexCounter(docCount = 0, indexNum = 0))
-
-            # Increment number of documents stored per character
-            currentIndexCounter = IndexCounter(docCount = currentIndexCounter.docCount + 1, indexNum=currentIndexCounter.indexNum)
-            self.alphanumerical_counts[char_modified] = currentIndexCounter
-
-            # TODO: Modify to dump on file size rather than document threshold. You should do this by getting the size of the posting list
-            # Dump partial index if it exceeds PARTIAL_INDEX_DOC_THRESHOLD
-            if self.alphanumerical_counts[char_modified].docCount >= PARTIAL_INDEX_DOC_THRESHOLD:
-                # Dump the partial index to disk
-                self.__dump_to_disk(char_modified)
-
-                # Reset count
-                currentIndexCounter = IndexCounter(docCount = 0, indexNum = currentIndexCounter.indexNum + 1)
-                self.alphanumerical_counts[char_modified] = currentIndexCounter
-
-                # Reset the partial index within memory
-                self.alphanumerical_index[char_modified].clear()
+        
+        self.__dump_to_disk(alphanumerical_indexes_modified)
 
         self.total_doc_indexed += 1 
 
@@ -338,14 +317,40 @@ class InvertedIndex:
         except Exception as e:
             self.logger.error(f"Unable to save partial index to disk: {index_file} - {e}")
 
-    def __dump_to_disk(self, partial_index_char: str): 
+    def __dump_to_disk(self, alphanumerical_indexes_modified: set, threshhold: int = PARTIAL_INDEX_DOC_THRESHOLD) -> None:
         """
         Saves partial inverted index and doc_id map to
         disk, then clears them from memory.
         """
-        self.__save_index_to_disk(partial_index_char)
-        self.__save_doc_id_map_to_disk()
-        self.doc_id_map.clear()
+
+        is_disk_index_updated = False
+        # Note which partial indexes were updated and dump if necessary
+        for char_modified in alphanumerical_indexes_modified:
+            # Get the existing tuple of counts, initialize (0, 0) if none
+            currentIndexCounter = self.alphanumerical_counts.get(char_modified, IndexCounter(docCount = 0, indexNum = 0))
+
+            # Increment number of documents stored per character
+            currentIndexCounter = IndexCounter(docCount = currentIndexCounter.docCount + 1, indexNum=currentIndexCounter.indexNum)
+            self.alphanumerical_counts[char_modified] = currentIndexCounter
+
+            # TODO: Modify to dump on file size rather than document threshold. You should do this by getting the size of the posting list
+            # Dump partial index if it exceeds PARTIAL_INDEX_DOC_THRESHOLD
+            if self.alphanumerical_counts[char_modified].docCount >= threshhold:
+                is_disk_index_updated = True
+                self.__save_index_to_disk(char_modified)
+
+                # Reset count
+                currentIndexCounter = IndexCounter(docCount = 0, indexNum = currentIndexCounter.indexNum + 1)
+                self.alphanumerical_counts[char_modified] = currentIndexCounter
+
+                # Reset the partial index within memory
+                self.alphanumerical_index[char_modified].clear()
+        
+        if is_disk_index_updated: 
+            # Update the doc_id map if index on disk is updated
+            self.__save_doc_id_map_to_disk()
+            self.doc_id_map.clear()
+
         gc.collect()
 
     def __extract_tokens_with_weighting(self, content: str, weigh_factor: int = 2) -> list[str]: 
@@ -418,7 +423,7 @@ class InvertedIndex:
                         postings.append((int(docid), int(freq), float(tf)))
                     inverted_index[token] = postings
         except Exception as e:
-            self.logger.error(f"Unable to read file: {e}")
+            self.logger.error(f"Unable to read .txt file: {e}")
 
         return inverted_index
 

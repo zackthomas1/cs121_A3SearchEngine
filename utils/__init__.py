@@ -90,7 +90,7 @@ def read_json_file(file_path: str, logger: Logger) -> dict:
     try:
         with open(file_path, 'r') as file: 
             data = json.load(file)
-            # logger.info(f"Success: Load JSON file: {file_path}")
+            logger.info(f"Success: Data read from json file: {file_path}")
             return data
     except FileNotFoundError:
         logger.error(f"File note found at path: {file_path}")
@@ -109,7 +109,6 @@ def write_json_file(file_path: str, data: dict, logger: Logger) -> None:
         logger (Logger):
     """
     try:
-        logger.info(f"Writing file...")
         new_data = {}
         # Check if there is already data save in the file
         if os.path.exists(file_path):
