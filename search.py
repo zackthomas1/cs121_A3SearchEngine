@@ -6,11 +6,11 @@ from nltk.corpus import wordnet as wn
 from utils import compute_tf_idf, get_logger
 
 # constants 
-EPSILON = 0.0001
+EPSILON = 0.00001
 
 search_logger = get_logger("SEARCH")
 
-def expand_query(query: str, limit: int = 3) -> str: 
+def expand_query(query: str, limit: int = 2) -> str: 
     """
     Expands input query by adding synonyms using nltk wordnet
 
@@ -45,7 +45,7 @@ def expand_query(query: str, limit: int = 3) -> str:
     search_logger.info(f"Query Expanded to: {expanded_query}")
     return expanded_query
 
-def search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIndex) -> list[set[str, int]]:
+def search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIndex, total_docs: int, precomputed_doc_norms: dict) -> list[set[str, int]]:
     """
 
     Documents are ranked based on directional similarity rather than raw frequency.
@@ -58,7 +58,6 @@ def search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIn
     """
    
     merged_index = inverted_index.construct_merged_index_from_disk(query_tokens)
-    total_docs = len(inverted_index.load_doc_id_map_from_disk())
     scores = defaultdict(float)
     
     # Compute Query Vector: Uses raw term counts

@@ -1,3 +1,4 @@
+import time
 from inverted_index import InvertedIndex
 from search import expand_query, search_cosine_similarity
 from utils import tokenize_text
@@ -51,12 +52,17 @@ def retrive_relevant_urls(query: str, n: int, index: InvertedIndex) -> list[str]
     
     {'ahm': [[111, 1], [238, 2], [499, 1], [4360, 1], [5006, 4], [592, 3], [686, 1], [744, 1], [745, 1], [5013, 2], [5030, 2], [5035, 2], [5038, 2], [5047, 6], [5051, 2], [5095, 2], [5118, 2], [5138, 2], [835, 1], [1110, 1], [1133, 1]]}
     """
-    query_tokens = tokenize_text(expand_query(query))
-    ranked_results = search_cosine_similarity(query_tokens, index)
-    ranked_results = ranked_results[:n]
-
-    # Load the doc_id map to get urls
+    total_docs = index.load_meta_data_from_disk()["total_doc_indexed"]
+    precomputed_doc_norms = index.load_doc_norms_from_disk()
     doc_id_url_map = index.load_doc_id_map_from_disk()
+    query_tokens = tokenize_text(expand_query(query))
+
+    # Begin timing after recieving search query
+    start_time = time.perf_counter() * 1000
+    ranked_results = search_cosine_similarity(query_tokens, index, total_docs, precomputed_doc_norms)
+    end_time = time.perf_counter() * 1000
+    ranked_results = ranked_results[:n]
+    print(f"Completed search: {end_time - start_time:.0f} ms")
 
     # Get and return the top N urls
     ranked_urls = set()
