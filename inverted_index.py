@@ -29,7 +29,6 @@ class InvertedIndex:
         self.doc_id_map = {} # {doc_id: url}
         self.doc_count_partial_index = 0
         self.doc_count_total = 0
-        self.average_doc_length = 0
 
         self.logger = get_logger("INVERTED_INDEX")
 
@@ -263,11 +262,12 @@ class InvertedIndex:
         self.doc_id_map[doc_id] = url
 
     def __save_meta_data_to_disk(self) -> None: 
-        """"""
+        """
+        Saves meta data about the inverted index to disk to be read back when preforming query
+        """
 
         meta_data = {
             "doc_count_total": self.doc_count_total,
-            "average_doc_length": self.average_doc_length
         }
         
         # write index to file
