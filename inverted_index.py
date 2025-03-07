@@ -34,7 +34,8 @@ class InvertedIndex:
         self.doc_id_map = {} # {doc_id: url}
         self.visited_content_simhashes = set()
         self.doc_count_partial_index = 0
-        self.doc_count_total = 0
+        self.doc_id = 0
+        self.total_doc_indexed = 0  # Tracks the number of documents successfully processed/indexed (not skipped).
 
         self.logger = get_logger("INVERTED_INDEX")
 
@@ -58,14 +59,14 @@ class InvertedIndex:
 
         for root, dirs, files in os.walk(folder_path):
             for file_name in files:
-                self.logger.info(f"Indexing doc: {self.doc_count_total}")
+                self.logger.info(f"Indexing doc: {self.doc_id}")
                 if file_name.endswith(".json"):
-                    self.__process_document(os.path.join(root, file_name), self.doc_count_total)
+                    self.__process_document(os.path.join(root, file_name), self.doc_id)
                 else:
                     self.logger.warning(f"File not does not end with .json extention: {file_name}")
                 
                 # Update counters
-                self.doc_count_total += 1
+                self.doc_id += 1
                 
         # Dump any remaining tokens to disk
         for alphanum_char, partial_index in self.alphanumerical_index.items():
@@ -173,7 +174,7 @@ class InvertedIndex:
 
         #TODO: do no use the master index
         master_index = self.load_master_index_from_disk()
-        total_docs = self.doc_count_total
+        total_docs = self.total_doc_indexed
         doc_norms = defaultdict(float)
         
         # Compute document vector norms by summing squared token weights
@@ -285,7 +286,7 @@ class InvertedIndex:
                 # Reset the partial index within memory
                 self.alphanumerical_index[char_modified].clear()
 
-
+        self.total_doc_indexed += 1 
 
     def __update_doc_id_map(self, doc_id: int, url: str) -> None:
         """
@@ -305,17 +306,16 @@ class InvertedIndex:
         """
 
         meta_data = {
-            "doc_count_total": self.doc_count_total,
+            "max_doc_id" : self.doc_id,
+            "total_doc_indexed": self.total_doc_indexed
         }
         write_json_file(META_DATA_FILE, meta_data, self.logger)
-        
 
     def __save_doc_id_map_to_disk(self) -> None: 
         """
         Saves the Doc_ID-URL mapping to disk as a JSON file
         """
         write_json_file(DOC_ID_MAP_FILE, self.doc_id_map, self.logger)
-        
 
     def __save_index_to_disk(self, partial_index_char: str) -> None: 
         """
@@ -349,21 +349,6 @@ class InvertedIndex:
         self.__save_doc_id_map_to_disk()
         self.doc_id_map.clear()
         gc.collect()
-
-    def __construct_token_freq_counter(tokens: list[str]) -> Counter:  # NOTE: This is Not a member function
-        """
-        Counts the apparence frequency a token in a list of tokens from a single document
-        
-        Parameters:
-        tokens (list[str]): A list of tokens from a single document
-
-        Returns:
-        Counter: A list of tuple pairs the token string and an integer of the frequency of token in tokens list
-        """
-        
-        counter = Counter()
-        counter.update(tokens)
-        return counter
 
     def __extract_tokens_with_weighting(self, content: str, weigh_factor: int = 2) -> list[str]: 
         """
@@ -443,4 +428,20 @@ class InvertedIndex:
     @staticmethod
     def __compute_tf(term_freq: int, doc_length: int)->int: 
         return term_freq / doc_length
+    
+    @staticmethod
+    def __construct_token_freq_counter(tokens: list[str]) -> Counter:
+        """
+        Counts the apparence frequency a token in a list of tokens from a single document
+        
+        Parameters:
+            tokens (list[str]): A list of tokens from a single document
+
+        Returns:
+            Counter: A list of tuple pairs the token string and an integer of the frequency of token in tokens list
+        """
+        
+        counter = Counter()
+        counter.update(tokens)
+        return counter
     
