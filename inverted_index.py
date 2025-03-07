@@ -83,7 +83,7 @@ class InvertedIndex:
             if file_name.startswith("index_part_") and file_name.endswith(".txt"):
                 file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
                 partial_index = defaultdict(list)
-                InvertedIndex.__load_txt(file_path, partial_index)
+                self.__read_partial_index_from_disk(file_path, partial_index)
 
                 # Merge token postings while maintaining order
                 for token, postings in partial_index.items():
@@ -256,12 +256,11 @@ class InvertedIndex:
         Document id-url index records which url is associated with each doc_id number
 
         Parameters:
-        doc_id (int): the unique identifier of the document
-        url (str): url web address of the related document
+            doc_id (int): the unique identifier of the document
+            url (str): url web address of the related document
         """
 
         self.doc_id_map[doc_id] = url
-
 
     def __save_meta_data_to_disk(self) -> None: 
         """"""
@@ -277,44 +276,42 @@ class InvertedIndex:
 
     def __save_doc_id_map_to_disk(self) -> None: 
         """
-        Saves the doc_id-url mapping to disk as .txt file
+        Saves the Doc_ID-URL mapping to disk as a JSON file
         """
-        existing_docidmap = {}
-      
+
         if os.path.exists(DOC_ID_MAP_FILE):
-            InvertedIndex.load_txt_docid_map_file(existing_docidmap)
+            with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
+                existing_map = json.load(f)
+        else: 
+            existing_map = {}
 
         for key, value in self.doc_id_map.items(): 
-            existing_docidmap[key] = value
-
-        # Write to doc_id_map.txt file    
-        InvertedIndex.__dump_txt_docid_map_file(existing_docidmap)
+            existing_map[key] = value
+        
+        # write index to file
+        with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
+            json.dump(existing_map, f, indent=4)
 
     def __save_index_to_disk(self) -> None: 
         """
-        Store current index to .txt file
+        Store the current in-memory partial index to a .txt file.
+        Each line in the file is formatted as:
+        token;doc_id1,freq1,tf1 doc_id2,freq2,tf2 ...
         """
 
-        self.logger.info("Dumping index to disk")
+        self.logger.info("Saving index to disk...")
         
         # Create a new .txt partial index file
         index_file = os.path.join(PARTIAL_INDEX_DIR, f"index_part_{len(os.listdir(PARTIAL_INDEX_DIR)):04d}.txt")
 
-        # Check if .txt partial index file already existing index
-        existing_data = defaultdict(list)
-        if os.path.exists(index_file):
-            InvertedIndex.__load_txt(index_file, existing_data)
+        with open(index_file, "w", encoding="utf-8") as f:
+            # Merge exisiting index with new data from in memory index
+            for token, postings in self.index.items(): 
+                # Serialize posting: each posting is represented as doc_id,freq,tf
+                postings_str = " ".join([f"{docid},{freq},{tf}" for docid, freq, tf in postings])
+                f.write(f"{token};{postings_str}\n")
 
-        # Merge exisiting index with new data from in memory index
-        for token, postings in self.index.items(): 
-            if token in existing_data: 
-                existing_data[token].extend(postings)
-            else: 
-                existing_data[token] = postings
-
-        # Write index to file
-        InvertedIndex.__dump_txt(index_file, existing_data)
-
+        self.logger.info(f"Partial index saved to {index_file}")
 
     def __dump_to_disk(self): 
         """
@@ -392,12 +389,12 @@ class InvertedIndex:
     def __read_json_file(self, file_path: str) -> dict[str, str]:
         """
         Parameters:
-        file_path (str): File path to json document in local file storage
+            file_path (str): File path to json document in local file storage
 
         Returns:
-        dict[str, str]: returns the data stored in the json file as a python dictionary
+            dict[str, str]: returns the data stored in the json file as a python dictionary
         """
-        try:  # NOTE: developer\DEV is given as json files so use json.load() instead of __load_txt() here
+        try:
             with open(file_path, 'r') as file: 
                 data = json.load(file)
                 # self.logger.info(f"Success: Load JSON file: {file_path}")
@@ -412,12 +409,19 @@ class InvertedIndex:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
             return None
        
-    def __load_txt(file_path: str, inverted_index: dict[str, list[tuple[int, float]]]) -> None:
+    def __read_partial_index_from_disk(self, file_path: str) -> dict[str, list[tuple[int, int, float]]]:
         """
-        loads inverted index from designated .txt file (usually used with partial_index)
+        Reads/deserializes partial inverted index from file
+        [LINE FORMAT] token;docid1,freq1,tf1 docid2,freq2,tf2 docid3,freq3,tf3\n
+
+        Parameters: 
+            file_path (str): A file path to a partial index serialized in a .txt file 
+
+        Returns:
+            dict[str, list[tuple[int, int, float]]]:
+
         """
-        
-        # NOTE: [LINE FORMAT] token;docid1,posting1 docid2,posting2 docid3,posting3\n
+        inverted_index = defaultdict(list[tuple[int, int, float]])
         with open(file_path, "r", encoding="utf-8") as f:
             for line in f:
                 # if len(tok_post) < 2:  # NOTE: Omitting bound checking for performance
@@ -425,32 +429,11 @@ class InvertedIndex:
                 token, postings_str = line.strip().split(";")
                 postings = []
                 for posting in postings_str.split():
-                    docid, tfidf = posting.split(",")
-                    postings.append((int(docid), float(tfidf)))
+                    docid, freq, tf = posting.split(",")
+                    postings.append((int(docid), int(freq), float(tf)))
                 inverted_index[token] = postings
 
-
-    def __dump_txt(file_path: str, inverted_index: dict[str, list[tuple[int, float]]]) -> None:
-        """Dumps inverted index into designated .txt file (usually used with master_index)"""
-        with open(file_path, "w", encoding="utf-8") as f:
-            for token, postings in inverted_index.items():
-                postings_str = " ".join([f"{docid},{tfidf}" for docid, tfidf in postings])
-                f.write(f"{token};{postings_str}\n")
-
-    
-    def load_txt_docid_map_file(docid_map: dict[str, str]) -> None:
-        """Loads docid_url map from designated .txt file"""
-        # NOTE: [LINE FORMAT] docid;url\n
-        with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f:
-            for line in f:
-                docid, url = line.strip().split(";")
-                docid_map[docid] = url
-
-    def __dump_txt_docid_map_file(docid_map: dict[str, str]) -> None:
-        """Dumps docid_url map into designated .txt file"""
-        with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
-            for docid, url in docid_map.items():
-                f.write(f"{docid};{url}\n")
+        return inverted_index
 
     # Non-member functions
     @staticmethod
