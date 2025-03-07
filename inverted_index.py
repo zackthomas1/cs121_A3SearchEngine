@@ -256,12 +256,11 @@ class InvertedIndex:
         Document id-url index records which url is associated with each doc_id number
 
         Parameters:
-        doc_id (int): the unique identifier of the document
-        url (str): url web address of the related document
+            doc_id (int): the unique identifier of the document
+            url (str): url web address of the related document
         """
 
         self.doc_id_map[doc_id] = url
-
 
     def __save_meta_data_to_disk(self) -> None: 
         """"""
@@ -292,29 +291,24 @@ class InvertedIndex:
 
     def __save_index_to_disk(self) -> None: 
         """
-        Store current index to .txt file
+        Store the current in-memory partial index to a .txt file.
+        Each line in the file is formatted as:
+        token;doc_id1,freq1,tf1 doc_id2,freq2,tf2 ...
         """
 
-        self.logger.info("Dumping index to disk")
+        self.logger.info("Saving index to disk...")
         
         # Create a new .txt partial index file
         index_file = os.path.join(PARTIAL_INDEX_DIR, f"index_part_{len(os.listdir(PARTIAL_INDEX_DIR)):04d}.txt")
 
-        # Check if .txt partial index file already existing index
-        existing_data = defaultdict(list)
-        if os.path.exists(index_file):
-            InvertedIndex.__load_txt(index_file, existing_data)
+        with open(index_file, "w", encoding="utf-8") as f:
+            # Merge exisiting index with new data from in memory index
+            for token, postings in self.index.items(): 
+                # Serialize posting: each posting is represented as doc_id,freq,tf
+                postings_str = " ".join([f"{docid},{freq},{tf}" for docid, freq, tf in postings])
+                f.write(f"{token};{postings_str}\n")
 
-        # Merge exisiting index with new data from in memory index
-        for token, postings in self.index.items(): 
-            if token in existing_data: 
-                existing_data[token].extend(postings)
-            else: 
-                existing_data[token] = postings
-
-        # Write index to file
-        InvertedIndex.__dump_txt(index_file, existing_data)
-
+        self.logger.info(f"Partial index saved to {index_file}")
 
     def __dump_to_disk(self): 
         """
@@ -430,12 +424,7 @@ class InvertedIndex:
                 inverted_index[token] = postings
 
 
-    def __dump_txt(file_path: str, inverted_index: dict[str, list[tuple[int, float]]]) -> None:
-        """Dumps inverted index into designated .txt file (usually used with master_index)"""
-        with open(file_path, "w", encoding="utf-8") as f:
-            for token, postings in inverted_index.items():
-                postings_str = " ".join([f"{docid},{tfidf}" for docid, tfidf in postings])
-                f.write(f"{token};{postings_str}\n")
+
 
     
     def load_txt_docid_map_file(docid_map: dict[str, str]) -> None:
