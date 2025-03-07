@@ -27,7 +27,7 @@ class InvertedIndex:
         
         self.index: dict[str, list[tuple[int, int, float]]] = defaultdict(list)  # {token: [(docid, freq, tf)]}
         self.doc_id_map = {} # {doc_id: url}
-        self.visited_content_simhashes = []
+        self.visited_content_simhashes = set()
         self.doc_count_partial_index = 0
         self.doc_count_total = 0
 
@@ -181,6 +181,7 @@ class InvertedIndex:
 
         self.logger.info("Precomputing document normals...")
 
+        #TODO: do no use the master index
         master_index = self.load_master_index_from_disk()
         total_docs = self.doc_count_total
         doc_norms = defaultdict(float)
@@ -226,15 +227,15 @@ class InvertedIndex:
         # Extract url and check that is valid
         url = clean_url(data['url'])
         if is_non_html_extension(url):
-            self.logger.warning(f"Skipping url with non html extension")
+            self.logger.warning(f"Skipping url with non html extension - {url}")
             return
 
         content = data['content']
         if not content: 
-            self.logger.warning(f"Skipping empty content: {file_path}")
+            self.logger.warning(f"Skipping doc {doc_id}: empty content - {url}")
             return
         if is_xml(content):
-            self.logger.warning(f"Skipping content is XML: {file_path}")
+            self.logger.warning(f"Skipping doc {doc_id}: content is XML - {url}")
             return
 
         # Extract tokens from html content
@@ -245,10 +246,10 @@ class InvertedIndex:
         for visited_page_hash in self.visited_content_simhashes:
             dist = simhash.calculate_hash_distance(current_page_hash, visited_page_hash)
             if dist == 0:  # Exact-duplicate
-                self.logger.warning(f"Skipping URL {url}: Exact Duplicate Content Match with Dist={dist}")
+                self.logger.warning(f"Skipping doc {doc_id}: Exact Duplicate Content Match with Dist={dist} - {url}")
                 return []
             elif dist < simhash.THRESHOLD:  # Near-duplicate
-                self.logger.warning(f"Skipping URL {url}: Near Duplicate Content Match with Dist={dist}")
+                self.logger.warning(f"Skipping doc {doc_id}: Near Duplicate Content Match with Dist={dist} - {url}")
                 return []
         self.visited_content_simhashes.add(current_page_hash)
 
