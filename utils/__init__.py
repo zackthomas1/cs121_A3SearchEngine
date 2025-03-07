@@ -77,7 +77,6 @@ def lemmatize_tokens(tokens: list[str]) -> list[str]:
     """
     return [lemmatizer.lemmatize(token) for token in tokens]
 
-
 def stem_tokens(tokens: list[str]) -> list[str]:
     """
     Apply porters stemmer to tokens
@@ -88,7 +87,7 @@ def stem_tokens(tokens: list[str]) -> list[str]:
     Returns:
         list[str]: a lemmatized list of tokens
     """
-    
+
     return [stemmer.stem(token) for token in tokens]
 
 def tokenize_text(text: str) -> list[str]:
@@ -104,7 +103,6 @@ def tokenize_text(text: str) -> list[str]:
 
     tokens =  word_tokenize(text.lower())
     return [token for token in tokens if token.isalnum()]
-    # return tokenizer.tokenize(text)
 
 def is_non_html_extension(url: str) -> bool: 
     parsed_url = urlparse(url)

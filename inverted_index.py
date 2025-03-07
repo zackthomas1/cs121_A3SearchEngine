@@ -239,7 +239,7 @@ class InvertedIndex:
         # Extract tokens from html content
         tokens = self.__extract_tokens_with_weighting(content)
 
-        #
+        # Update doc id map
         self.__update_doc_id_map(doc_id, url)
 
         # Tokenize text
