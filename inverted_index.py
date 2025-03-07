@@ -6,7 +6,7 @@ import simhash
 import sys
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
-from utils import clean_url, compute_tf_idf, get_logger, read_json_file, tokenize_text, is_non_html_extension, is_xml
+from utils import clean_url, compute_tf_idf, get_logger, read_json_file, write_json_file, tokenize_text, is_non_html_extension, is_xml
 from datastructures import IndexCounter
 
 # Constants 
@@ -130,12 +130,16 @@ class InvertedIndex:
                         merged_index[token] = index_part[token]
 
         return merged_index
-    
-    def load_doc_id_map_from_disk(self) -> dict[str, str]:
-        """Load the doc_id map to get urls"""
+
+    def load_meta_data_from_disk(self) -> dict:
+        """Load index meta file from disk"""
+        return read_json_file(META_DATA_FILE, self.logger)
+
+    def load_doc_id_map_from_disk(self) -> dict:
+        """Load the doc_id map from disk to get urls"""
         return read_json_file(DOC_ID_MAP_FILE, self.logger)
     
-    def load_doc_norms_from_disk(self) -> dict[int, float]:
+    def load_doc_norms_from_disk(self) -> dict:
         """
         Loads the precomputed document norms from disk.
 
@@ -303,32 +307,15 @@ class InvertedIndex:
         meta_data = {
             "doc_count_total": self.doc_count_total,
         }
-        try:
-            # write index to file
-            with open(META_DATA_FILE, "w", encoding="utf-8") as f:
-                json.dump(meta_data, f, indent=4)
-        except Exception as e:
-            self.logger.error(f"Unable to save meta data to file: {e}")
+        write_json_file(META_DATA_FILE, meta_data, self.logger)
+        
 
     def __save_doc_id_map_to_disk(self) -> None: 
         """
         Saves the Doc_ID-URL mapping to disk as a JSON file
         """
-        try: 
-            if os.path.exists(DOC_ID_MAP_FILE):
-                with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
-                    existing_map = json.load(f)
-            else: 
-                existing_map = {}
-
-            for key, value in self.doc_id_map.items(): 
-                existing_map[key] = value
-            
-            # write index to file
-            with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
-                json.dump(existing_map, f, indent=4)
-        except Exception as e:
-            self.logger.error(f"Unable to save doc_id map to file: {e}")
+        write_json_file(DOC_ID_MAP_FILE, self.doc_id_map, self.logger)
+        
 
     def __save_index_to_disk(self, partial_index_char: str) -> None: 
         """
