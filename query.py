@@ -64,29 +64,44 @@ def ranked_search_cosine_similarity(query_tokens: list[str], inverted_index: Inv
     merged_index = inverted_index.construct_merged_index_from_disk(query_tokens, token_to_file_map)
     scores = defaultdict(float)
     
-    # Compute Query Vector: Uses raw term counts
-    #TODO: Enhance by using idf
-    query_vector = defaultdict(float)
+    # Compute query vector using raw frequency
+    query_tf_counts = defaultdict(float)
     for token in query_tokens:
-        query_vector[token] += 1
-    # Compute Frobenius norm (Euclidean) of query vector
-    query_norm = norm(list(query_vector.values()))
+        query_tf_counts[token] += 1
+    total_query_terms = sum(query_tf_counts.values())
+
+    # Compute tf-idf weighted query vector
+    query_weight_vector = {}
+    for token, count in query_tf_counts.items():
+        if token in merged_index: 
+            # Normalize tf in query
+            query_tf = count / total_query_terms
+            df = len(merged_index[token])
+            query_weight_vector[token] = compute_tf_idf(query_tf, df, total_docs)
+        else: 
+            # Toekn does not appear in any document, skip it
+            query_weight_vector[token] = 0.0
     
-    # Computing dot product between query and document vectors
-    for token in query_tokens:
+    # Compute Euclidean norm of query vector
+    query_norm = norm(list(query_weight_vector.values()))
+
+    # Compute dot product between query and document vectors
+    for token, query_weight in query_weight_vector.items():
         if token in merged_index:
             postings = merged_index[token]
-            doc_freq = len(postings)
             for doc_id, freq, tf in postings:
-                token_weight = compute_tf_idf(tf, doc_freq, total_docs)
-                scores[doc_id] += token_weight * query_vector[token]
+                df = len(postings)
+                doc_token_weight = compute_tf_idf(tf, df, total_docs)
+                scores[doc_id] += query_weight * doc_token_weight
 
     # Normalize scores to obtain cosine similarity
     # Cosine Similarity (A, B) = (A · B) / (||A|| * ||B||)
     for doc_id in scores:
-        doc_norm = precomputed_doc_norms[doc_id]
+        doc_norm = precomputed_doc_norms.get(doc_id, 0.0)
         if abs(doc_norm) > EPSILON and abs(query_norm) > EPSILON:
             scores[doc_id] /= (doc_norm * query_norm)
+        else: 
+            scores[doc_id] = 0.0
 
     # Sort the merged results by their cosine similarity (quality), tie-break with doc_id
     return sorted(scores.items(), key=lambda item: (-item[1], item[0]))
