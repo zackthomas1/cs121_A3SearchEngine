@@ -11,7 +11,7 @@ from datastructures import IndexCounter
 from pympler.asizeof import asizeof
 
 # Constants 
-PARTIAL_INDEX_SIZE_THRESHOLD_KB = 20000  # set threshold to 20000 KB (margin of error: 1000KB)
+PARTIAL_INDEX_SIZE_THRESHOLD_KB = 20000  # set threshold to 20000 KB (margin of error: 5000 KB)
 DOC_THRESHOLD_COUNT = 125
 
 
@@ -72,7 +72,7 @@ class InvertedIndex:
                 
         # Dump any remaining tokens to disk
         alphanumerical_indexes_modified = [alphanum_char for alphanum_char, partial_index in self.alphanumerical_index.items() if partial_index]
-        self.__dump_to_disk(set(alphanumerical_indexes_modified), threshhold=0)
+        self.__dump_to_disk(set(alphanumerical_indexes_modified), override=True)
 
         # Save index meta data disk
         self.__save_meta_data_to_disk()
@@ -171,7 +171,7 @@ class InvertedIndex:
 
         self.logger.info("Precomputing document normals...")
 
-        #TODO: do no use the master index
+        # NOTE: do no use the master index
         master_index = self.load_master_index_from_disk()
         total_docs = self.total_doc_indexed
         doc_norms = defaultdict(float)
@@ -321,7 +321,7 @@ class InvertedIndex:
         except Exception as e:
             self.logger.error(f"Unable to save partial index to disk: {index_file} - {e}")
 
-    def __dump_to_disk(self, alphanumerical_indexes_modified: set, threshhold: int = PARTIAL_INDEX_DOC_THRESHOLD) -> None:
+    def __dump_to_disk(self, alphanumerical_indexes_modified: set, override: bool = False) -> None:
         """
         Saves partial inverted index and doc_id map to
         disk, then clears them from memory.
@@ -337,10 +337,9 @@ class InvertedIndex:
             currentIndexCounter = IndexCounter(docCount = currentIndexCounter.docCount + 1, indexNum=currentIndexCounter.indexNum)
             self.alphanumerical_counts[char_modified] = currentIndexCounter
 
-            # TODO: Modify to dump on file size rather than document threshold. You should do this by getting the size of the posting list
             # Dump partial index if it exceeds PARTIAL_INDEX_DOC_THRESHOLD
-            if self.alphanumerical_counts[char_modified].docCount % DOC_THRESHOLD_COUNT == 0:
-              if (asizeof(self.alphanumerical_index[char_modified]) / 1024) >= PARTIAL_INDEX_SIZE_THRESHOLD_KB:  # Compare in KB
+            if override or self.alphanumerical_counts[char_modified].docCount % DOC_THRESHOLD_COUNT == 0:
+              if override or (asizeof(self.alphanumerical_index[char_modified]) / 1024) >= PARTIAL_INDEX_SIZE_THRESHOLD_KB:  # Compare in KB
                   is_disk_index_updated = True
                   self.__save_index_to_disk(char_modified)
 
