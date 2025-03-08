@@ -1,4 +1,5 @@
 import math
+import time
 from numpy.linalg import norm
 from collections import defaultdict
 from inverted_index import InvertedIndex
@@ -49,7 +50,7 @@ def expand_query(query: str, limit: int = 2) -> str:
     search_logger.info(f"Query Expanded to: {expanded_query}")
     return expanded_query
 
-def search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIndex, total_docs: int, precomputed_doc_norms: dict) -> list[set[str, int]]:
+def search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIndex, total_docs: int, precomputed_doc_norms: dict, token_to_file_map: dict) -> list:
     """
 
     Documents are ranked based on directional similarity rather than raw frequency.
@@ -60,8 +61,10 @@ def search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIn
     Returns:
         dict[str, list[tuple[int, int]]]: Inverted index containing only tokens formed from the query string
     """
-   
-    merged_index = inverted_index.construct_merged_index_from_disk(query_tokens)
+    start_time = time.perf_counter() * 1000
+    merged_index = inverted_index.construct_merged_index_from_disk(query_tokens, token_to_file_map)
+    end_time = time.perf_counter() * 1000
+    print(f"Merged Index Construction: {end_time - start_time:.0f} ms")
     scores = defaultdict(float)
     
     # Compute Query Vector: Uses raw term counts
@@ -80,9 +83,6 @@ def search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIn
             for doc_id, freq, tf in postings:
                 token_weight = compute_tf_idf(tf, doc_freq, total_docs)
                 scores[doc_id] += token_weight * query_vector[token]
-
-    # Load precomputed document vector norms
-    precomputed_doc_norms = inverted_index.load_doc_norms_from_disk()
 
     # Normalize scores to obtain cosine similarity
     # Cosine Similarity (A, B) = (A · B) / (||A|| * ||B||)
