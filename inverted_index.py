@@ -176,7 +176,7 @@ class InvertedIndex:
         """
         return read_json_file(TOKEN_TO_FILE_MAP_FILE, self.logger)
 
-    def precompute_document_norms(self) -> None:
+    def precompute_doc_norms(self) -> None:
         """
         Precomputes the Euclidean norm of each document's vector using tf-idf weighting. 
 
@@ -188,31 +188,38 @@ class InvertedIndex:
 
         self.logger.info("Precomputing document normals...")
 
-        # NOTE: do no use the master index
-        master_index = self.load_master_index_from_disk()
-        total_docs = self.total_doc_indexed
-        doc_norms = defaultdict(float)
+        total_docs = self.load_meta_data_from_disk()["total_doc_indexed"]
         
-        # Compute document vector norms by summing squared token weights
-        for token, postings in master_index.items():
-            doc_freq = len(postings)
-            for posting in postings:
-                doc_id, freq, tf = posting
-                weight = compute_tf_idf(tf, doc_freq, total_docs)
-                doc_norms[doc_id] += weight ** 2
+        # Compute global document frequency for each token
+        global_df = defaultdict(int)
+        for subdir in os.listdir(PARTIAL_INDEX_DIR):
+            subdir_path = os.path.join(PARTIAL_INDEX_DIR, subdir)
+            for file_name in os.listdir(subdir_path):
+                file_path = os.path.join(subdir_path, file_name)
+                partial_index = self.__read_partial_index_from_disk(file_path)
+                for token, postings in partial_index.items():
+                    global_df[token] += len(postings)
 
-        # Take square root for each document
-        for doc_id in doc_norms:
+        self.logger.info("Gloabl document frequencies computed.")
+
+        # Compute document norms using tf-idf weights
+        doc_norms = defaultdict(float)
+        for subdir in os.listdir(PARTIAL_INDEX_DIR):
+            subdir_path = os.path.join(PARTIAL_INDEX_DIR, subdir)
+            for file_name in os.listdir(subdir_path):
+                file_path = os.path.join(subdir_path, file_name)
+                partial_index = self.__read_partial_index_from_disk(file_path)
+                for token, postings in partial_index.items():
+                    df = global_df[token]
+                    for doc_id, freq, tf in postings: 
+                        weight = compute_tf_idf(tf, df, total_docs)
+                        doc_norms[doc_id] += weight ** 2
+
+        # Take square root to compute Euclidean norm
+        for doc_id in doc_norms: 
             doc_norms[doc_id] = math.sqrt(doc_norms[doc_id])
 
-        try:
-            # Save computed doc norms to disk
-            with open(DOC_NORMS_FILE, "w", encoding="utf-8") as f: 
-                json.dump(doc_norms, f, indent=4)
-        except Exception as e:
-            self.logger.error(f"Unable to save precomputed document norms to file: {e}")
-
-
+        write_json_file(DOC_NORMS_FILE, doc_norms, self.logger)
         self.logger.info(f"Document norms saved to: {DOC_NORMS_FILE}")
         
     def __process_document(self, file_path: str, doc_id: int) -> None:
