@@ -14,15 +14,16 @@ from pympler.asizeof import asizeof
 PARTIAL_INDEX_SIZE_THRESHOLD_KB = 20000  # set threshold to 20000 KB (margin of error: 5000 KB)
 DOC_THRESHOLD_COUNT = 125
 
-
-META_DIR            = "index/meta_data"    # "index/doc_id_map"
-PARTIAL_INDEX_DIR   = "index/partial_index" # "index/partial_index"
 MASTER_INDEX_DIR    = "index/master_index"  # "index/master_index"
+PARTIAL_INDEX_DIR   = "index/partial_index" # "index/partial_index"
+META_DIR            = "index/meta_data"     # "index/meta_data"
+PAGERANK_GRAPH_DIR  = "index/page_rank"     # "index/page_rank"
 
 MASTER_INDEX_FILE   = os.path.join(MASTER_INDEX_DIR, "master_index.json")
 DOC_ID_MAP_FILE     = os.path.join(META_DIR, "doc_id_map.json")
 META_DATA_FILE      = os.path.join(META_DIR, "meta_data.json")
 DOC_NORMS_FILE      = os.path.join(META_DIR, "doc_norms.json")
+PR_GRAPH_FILE       = os.path.join(PAGERANK_GRAPH_DIR, "pr_graph.txt")
 
 class InvertedIndex: 
     def __init__(self):
@@ -235,6 +236,11 @@ class InvertedIndex:
 
         # Update doc id map
         self.__update_doc_id_map(doc_id, url)
+
+        # Save outgoing links to DISK for minimum RAM usage
+        # Format: doc_id:link1,link2,link3
+        with open(PR_GRAPH_FILE, "a") as f:
+            f.write(f"{doc_id}:{','.join(outgoing_links)}\n")
 
         # Tokenize text
         token_freq: dict[str, int] = InvertedIndex.__construct_token_freq_counter(tokens)
