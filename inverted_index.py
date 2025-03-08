@@ -40,19 +40,7 @@ class InvertedIndex:
         self.total_doc_indexed = 0  # Tracks the number of documents successfully processed/indexed (not skipped).
 
         self.logger = get_logger("INVERTED_INDEX")
-
-        # Initializes directories for index storage
-        os.makedirs(META_DIR, exist_ok=True) 
-        os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
-        os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
-
-        # Initializes directories a-z within the partial index
-        for letter_ascii in range(ord('a'), ord('z') + 1):
-            os.makedirs(PARTIAL_INDEX_DIR + '/' + chr(letter_ascii), exist_ok=True)
-
-        # Initializes directories 0-9 within the partial index
-        for num in range(10):
-            os.makedirs(PARTIAL_INDEX_DIR + '/' + str(num), exist_ok=True)
+        self.__setup_directories()  # Create all directories needed
 
     def build_index(self, folder_path: str) -> None: 
         """
@@ -221,7 +209,7 @@ class InvertedIndex:
             self.logger.warning(f"Skipping url with non html extension - {url}")
             return
 
-        content = data['content']
+        content = data['content']  # full raw text including HTML markups
 
         if not content: 
             self.logger.warning(f"Skipping doc {doc_id}: empty content - {url}")
@@ -231,7 +219,7 @@ class InvertedIndex:
             return
 
         # Extract tokens from html content
-        tokens = self.__extract_tokens_with_weighting(content)
+        tokens, outgoing_links = self.__extract_tokens_and_links(content)
 
         # Check for near and exact duplicate content (Simhash); Simhash also covers exact duplicate which has dist == 0
         current_page_hash = simhash.compute_simhash(tokens)
@@ -249,7 +237,7 @@ class InvertedIndex:
         self.__update_doc_id_map(doc_id, url)
 
         # Tokenize text
-        token_freq = InvertedIndex.__construct_token_freq_counter(tokens)
+        token_freq: dict[str, int] = InvertedIndex.__construct_token_freq_counter(tokens)
 
         # Update the inverted index with document tokens
         alphanumerical_indexes_modified = set() # Track which partial indexes are being updated this document
@@ -357,7 +345,7 @@ class InvertedIndex:
 
         gc.collect()
 
-    def __extract_tokens_with_weighting(self, content: str, weigh_factor: int = 2) -> list[str]: 
+    def __extract_tokens_and_links(self, content: str, weight_factor: int = 2) -> tuple[list[str], list[str]]: 
         """
         Extract toekns from HTML content and applies extra wieght to tokens that 
         appear in important HTML tags (titles, h1, h2, h3, and strong). 
@@ -394,10 +382,16 @@ class InvertedIndex:
             # Weight important tokens by replicating them
             # Tokens from the important sections are multiplied by a weight factor. 
             # This effectively increases their frequency count.
-            
-            weighted_tokens = general_tokens + (important_tokens * weigh_factor)
+            weighted_tokens = general_tokens + (important_tokens * weight_factor)
 
-            return weighted_tokens
+            # Preprocessing URLs for PageRank
+            outgoing_links = []
+            for anchor in soup.find_all("a", href=True):  # get all <a href> tag
+                link = anchor.get('href').strip()
+                if link.startswith("http"):  # if "full" URL
+                    outgoing_links.append(link)
+
+            return weighted_tokens, outgoing_links
         except Exception as e:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
             return None
@@ -430,6 +424,20 @@ class InvertedIndex:
             self.logger.error(f"Unable to read .txt file: {e}")
 
         return inverted_index
+    
+    def __setup_directories(self):
+        # Initializes directories for index storage
+        os.makedirs(META_DIR, exist_ok=True)
+        os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
+        os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
+
+        # Initializes directories a-z within the partial index
+        for letter_ascii in range(ord('a'), ord('z') + 1):
+            os.makedirs(PARTIAL_INDEX_DIR + '/' + chr(letter_ascii), exist_ok=True)
+
+        # Initializes directories 0-9 within the partial index
+        for num in range(10):
+            os.makedirs(PARTIAL_INDEX_DIR + '/' + str(num), exist_ok=True)
 
     # Non-member functions
     @staticmethod
