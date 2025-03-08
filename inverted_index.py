@@ -8,9 +8,12 @@ from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
 from utils import clean_url, compute_tf_idf, get_logger, read_json_file, write_json_file, tokenize_text, is_non_html_extension, is_xml
 from datastructures import IndexCounter
+from pympler.asizeof import asizeof
 
 # Constants 
-PARTIAL_INDEX_DOC_THRESHOLD = 500 # Dump index to latest JSON file every 100 docs
+PARTIAL_INDEX_SIZE_THRESHOLD_KB = 20000  # set threshold to 20000 KB (margin of error: 1000KB)
+DOC_THRESHOLD_COUNT = 125
+
 
 META_DIR            = "index/meta_data"    # "index/doc_id_map"
 PARTIAL_INDEX_DIR   = "index/partial_index" # "index/partial_index"
@@ -26,7 +29,6 @@ class InvertedIndex:
         """ 
         Prepares to Index data by initializing storage directories and counter/keying variables.
         """
-        
         # Note, modify the Tuple[] in the case you want to add more attributes to the posting
         self.alphanumerical_index: dict[str, dict[str, list[tuple[int, int, float]]]] = defaultdict(lambda: defaultdict(list)) # {letter/num: {token: [(docid, freq, tf_score)]}}
         self.alphanumerical_counts: dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
@@ -175,15 +177,15 @@ class InvertedIndex:
         doc_norms = defaultdict(float)
         
         # Compute document vector norms by summing squared token weights
-        for token, postings in master_index.items(): 
+        for token, postings in master_index.items():
             doc_freq = len(postings)
-            for posting in postings: 
+            for posting in postings:
                 doc_id, freq, tf = posting
                 weight = compute_tf_idf(tf, doc_freq, total_docs)
                 doc_norms[doc_id] += weight ** 2
 
         # Take square root for each document
-        for doc_id in doc_norms: 
+        for doc_id in doc_norms:
             doc_norms[doc_id] = math.sqrt(doc_norms[doc_id])
 
         try:
@@ -192,6 +194,7 @@ class InvertedIndex:
                 json.dump(doc_norms, f, indent=4)
         except Exception as e:
             self.logger.error(f"Unable to save precomputed document norms to file: {e}")
+
 
         self.logger.info(f"Document norms saved to: {DOC_NORMS_FILE}")
         
@@ -219,6 +222,7 @@ class InvertedIndex:
             return
 
         content = data['content']
+
         if not content: 
             self.logger.warning(f"Skipping doc {doc_id}: empty content - {url}")
             return
@@ -335,16 +339,17 @@ class InvertedIndex:
 
             # TODO: Modify to dump on file size rather than document threshold. You should do this by getting the size of the posting list
             # Dump partial index if it exceeds PARTIAL_INDEX_DOC_THRESHOLD
-            if self.alphanumerical_counts[char_modified].docCount >= threshhold:
-                is_disk_index_updated = True
-                self.__save_index_to_disk(char_modified)
+            if self.alphanumerical_counts[char_modified].docCount % DOC_THRESHOLD_COUNT == 0:
+              if (asizeof(self.alphanumerical_index[char_modified]) / 1024) >= PARTIAL_INDEX_SIZE_THRESHOLD_KB:  # Compare in KB
+                  is_disk_index_updated = True
+                  self.__save_index_to_disk(char_modified)
 
-                # Reset count
-                currentIndexCounter = IndexCounter(docCount = 0, indexNum = currentIndexCounter.indexNum + 1)
-                self.alphanumerical_counts[char_modified] = currentIndexCounter
+                  # Reset count
+                  currentIndexCounter = IndexCounter(docCount = 0, indexNum = currentIndexCounter.indexNum + 1)
+                  self.alphanumerical_counts[char_modified] = currentIndexCounter
 
-                # Reset the partial index within memory
-                self.alphanumerical_index[char_modified].clear()
+                  # Reset the partial index within memory
+                  self.alphanumerical_index[char_modified].clear()
         
         if is_disk_index_updated: 
             # Update the doc_id map if index on disk is updated
