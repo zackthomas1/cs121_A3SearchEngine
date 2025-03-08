@@ -9,7 +9,7 @@ from utils import compute_tf_idf, get_logger
 # constants 
 EPSILON = 0.00001
 
-search_logger = get_logger("SEARCH")
+query_logger = get_logger("QUERY")
 
 #TODO: Implement query token stemming
 
@@ -47,10 +47,10 @@ def expand_query(query: str, limit: int = 2) -> str:
         
     # return expanded query as single string
     expanded_query = " ".join(expanded_words)
-    search_logger.info(f"Query Expanded to: {expanded_query}")
+    query_logger.info(f"Query Expanded to: {expanded_query}")
     return expanded_query
 
-def search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIndex, total_docs: int, precomputed_doc_norms: dict, token_to_file_map: dict) -> list:
+def ranked_search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIndex, total_docs: int, precomputed_doc_norms: dict, token_to_file_map: dict) -> list:
     """
 
     Documents are ranked based on directional similarity rather than raw frequency.
@@ -61,10 +61,7 @@ def search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIn
     Returns:
         dict[str, list[tuple[int, int]]]: Inverted index containing only tokens formed from the query string
     """
-    start_time = time.perf_counter() * 1000
     merged_index = inverted_index.construct_merged_index_from_disk(query_tokens, token_to_file_map)
-    end_time = time.perf_counter() * 1000
-    print(f"Merged Index Construction: {end_time - start_time:.0f} ms")
     scores = defaultdict(float)
     
     # Compute Query Vector: Uses raw term counts

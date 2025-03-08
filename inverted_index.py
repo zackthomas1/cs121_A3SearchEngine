@@ -4,7 +4,7 @@ import time
 import math
 import json
 import simhash
-import sys
+import pickle
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
 from utils import clean_url, compute_tf_idf, get_logger, read_json_file, write_json_file, tokenize_text, is_non_html_extension, is_xml
@@ -12,7 +12,7 @@ from datastructures import IndexCounter
 from pympler.asizeof import asizeof
 
 # Constants 
-PARTIAL_INDEX_SIZE_THRESHOLD_KB = 20000  # set threshold to 20000 KB (margin of error: 5000 KB)
+PARTIAL_INDEX_SIZE_THRESHOLD_KB = 2000  # set threshold to 20000 KB (margin of error: 5000 KB)
 DOC_THRESHOLD_COUNT = 125
 
 
@@ -58,12 +58,11 @@ class InvertedIndex:
         for num in range(10):
             os.makedirs(PARTIAL_INDEX_DIR + '/' + str(num), exist_ok=True)
 
-    def build_index(self, folder_path: str) -> None: 
+    def build_index(self, corpus_dir: str) -> None: 
         """
         Process all JSON files in folder and build index.
         """
-
-        for root, dirs, files in os.walk(folder_path):
+        for root, dirs, files in os.walk(corpus_dir):
             for file_name in files:
                 self.logger.info(f"Indexing doc: {self.doc_id}")
                 if file_name.endswith(".json"):
@@ -123,10 +122,7 @@ class InvertedIndex:
                     file_list = token_to_file_map[token]
                     for file_path in file_list:
                         # Read in partial index from file
-                        start_time = time.perf_counter() * 1000
                         partial_index = self.__read_partial_index_from_disk(file_path)
-                        end_time = time.perf_counter() * 1000
-                        self.logger.info(f"Partial index file read in: {end_time - start_time:.0f} ms")
 
                         # Search for token in partial index and add found query tokens to merged_index
                         if token in partial_index: 
@@ -329,22 +325,18 @@ class InvertedIndex:
         
         # Create a new .txt partial index file
         filepath = PARTIAL_INDEX_DIR + '/' + partial_index_char
-        index_file = os.path.join(filepath, f"index_part_{self.alphanumerical_counts[partial_index_char].indexNum}.txt")
+        index_file = os.path.join(filepath, f"index_part_{self.alphanumerical_counts[partial_index_char].indexNum}.pkl")
         try: 
-            with open(index_file, "w", encoding="utf-8") as f:
-                partial_index = self.alphanumerical_index[partial_index_char].items()
-                # Merge exisiting index with new data from in memory index
-                for token, postings in partial_index: 
-                    # Serialize posting: each posting is represented as doc_id,freq,tf
-                    postings_str = " ".join([f"{docid},{freq},{tf}" for docid, freq, tf in postings])
-                    f.write(f"{token};{postings_str}\n")
-                    #Update token-to-file mapping
-                    self.token_to_file_map[token].append(index_file)
-
+            with open(index_file, "wb") as f:
+                pickle.dump(self.alphanumerical_index[partial_index_char], f)
+                self.logger.info(f"Partial index saved to {index_file}")
+            
+            # Update token-to-file mapping
+            for token in self.alphanumerical_index[partial_index_char]:
+                self.token_to_file_map[token].append(index_file)
             write_json_file(TOKEN_TO_FILE_MAP_FILE, self.token_to_file_map, self.logger)
             self.token_to_file_map.clear()
 
-            self.logger.info(f"Partial index saved to {index_file}")
         except Exception as e:
             self.logger.error(f"Unable to save partial index to disk: {index_file} - {e}")
 
@@ -441,22 +433,14 @@ class InvertedIndex:
             dict[str, list[tuple[int, int, float]]]:
 
         """
-        inverted_index = defaultdict(list[tuple[int, int, float]])
+        partial_index = defaultdict(list)
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    # if len(tok_post) < 2:  # NOTE: Omitting bound checking for performance
-                    #     continue  # Skip the line if data in wrong format (either token or posting doesn't exist)
-                    token, postings_str = line.strip().split(";")
-                    postings = []
-                    for posting in postings_str.split():
-                        docid, freq, tf = posting.split(",")
-                        postings.append((int(docid), int(freq), float(tf)))
-                    inverted_index[token] = postings
+            with open(file_path, "rb") as f:
+                partial_index = pickle.load(f)
         except Exception as e:
             self.logger.error(f"Unable to read .txt file: {e}")
 
-        return inverted_index
+        return partial_index
 
     # Non-member functions
     @staticmethod

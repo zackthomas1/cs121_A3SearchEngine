@@ -1,6 +1,6 @@
 import time
 from inverted_index import InvertedIndex
-from search import expand_query, search_cosine_similarity, test_construction
+from query import expand_query, ranked_search_cosine_similarity
 from utils import tokenize_text
 
 def count_tokens(index: InvertedIndex) -> int:
@@ -62,7 +62,7 @@ def retrive_relevant_urls(query: str, n: int, index: InvertedIndex) -> list[str]
 
     # Begin timing after recieving search query
     start_time = time.perf_counter() * 1000
-    ranked_results = search_cosine_similarity(query_tokens, index, total_docs, doc_norms, token_to_file_map)
+    ranked_results = ranked_search_cosine_similarity(query_tokens, index, total_docs, doc_norms, token_to_file_map)
     end_time = time.perf_counter() * 1000
     print(f"Completed search: {end_time - start_time:.0f} ms")
 
@@ -107,8 +107,7 @@ if __name__ == "__main__":
     # N_RESULTS = 5
     # queries = ["uci graphics",
     #            "graduate learning",
-    #            "ACM",
-    #            "master of software engineering", 
+    #            "software engineering technology", 
     #            "algorithm and data structure"]
     
     # print(f"Top {N_RESULTS} Query Results:")
