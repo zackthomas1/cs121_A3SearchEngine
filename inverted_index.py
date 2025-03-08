@@ -2,10 +2,11 @@ import os
 import gc
 import math
 import json
+import simhash
 import sys
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
-from utils import clean_url, compute_tf_idf, get_logger, tokenize_text, is_non_html_extension, is_xml
+from utils import clean_url, compute_tf_idf, get_logger, read_json_file, write_json_file, tokenize_text, is_non_html_extension, is_xml
 from datastructures import IndexCounter
 from pympler.asizeof import asizeof
 
@@ -33,9 +34,10 @@ class InvertedIndex:
         self.alphanumerical_counts: dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
         
         self.doc_id_map = {} # {doc_id: url}
+        self.visited_content_simhashes = set()
         self.doc_count_partial_index = 0
-        self.doc_count_total = 0
-        self.average_doc_length = 0
+        self.doc_id = 0
+        self.total_doc_indexed = 0  # Tracks the number of documents successfully processed/indexed (not skipped).
 
         self.logger = get_logger("INVERTED_INDEX")
 
@@ -59,21 +61,18 @@ class InvertedIndex:
 
         for root, dirs, files in os.walk(folder_path):
             for file_name in files:
-                self.logger.info(f"Indexing doc: {self.doc_count_total}")
+                self.logger.info(f"Indexing doc: {self.doc_id}")
                 if file_name.endswith(".json"):
-                    self.__process_document(os.path.join(root, file_name), self.doc_count_total)
+                    self.__process_document(os.path.join(root, file_name), self.doc_id)
                 else:
                     self.logger.warning(f"File not does not end with .json extention: {file_name}")
                 
                 # Update counters
-                self.doc_count_total += 1
+                self.doc_id += 1
                 
         # Dump any remaining tokens to disk
-        for alphanum_char, partial_index in self.alphanumerical_index.items():
-            if partial_index:
-                self.__save_index_to_disk(alphanum_char)
-                self.alphanumerical_index[alphanum_char].clear()
-                gc.collect()
+        alphanumerical_indexes_modified = [alphanum_char for alphanum_char, partial_index in self.alphanumerical_index.items() if partial_index]
+        self.__dump_to_disk(set(alphanumerical_indexes_modified), threshhold=0)
 
         # Save index meta data disk
         self.__save_meta_data_to_disk()
@@ -88,25 +87,21 @@ class InvertedIndex:
         self.logger.info(f"Building Master index...")
 
         # Iterate through all partial index files
-        for file_name in sorted(os.listdir(PARTIAL_INDEX_DIR)):  # Ensure order is maintained
-            self.logger.info(f"Adding: {file_name}")
-            if file_name.startswith("index_part_") and file_name.endswith(".txt"):
-                file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
-                partial_index = defaultdict(list)
-                self.__read_partial_index_from_disk(file_path, partial_index)
+        for dir_name in sorted(os.listdir(PARTIAL_INDEX_DIR)):  # Ensure order is maintained
+            dir_path = os.path.join(PARTIAL_INDEX_DIR, dir_name)
+            for file_name in os.listdir(dir_path):
+                file_path = os.path.join(dir_path, file_name)
+                self.logger.info(f"Adding: {file_path}")
+
+                partial_index = self.__read_partial_index_from_disk(file_path)
 
                 # Merge token postings while maintaining order
                 for token, postings in partial_index.items():
                     master_index[token].extend(postings)
 
-        # Save master index to disk
-        self.logger.info(f"Saving to file...")
-        with open(MASTER_INDEX_FILE, "w", encoding="utf-8") as f:
-            json.dump(master_index, f, indent=4)
-
-        self.logger.info(f"Master index built successfully and saved to {MASTER_INDEX_FILE}")
+        write_json_file(MASTER_INDEX_FILE, master_index, self.logger)
     
-    def construct_merged_index_from_disk(self, query_tokens: list[str]) -> dict[str, list[tuple[int, int, float]]]:
+    def construct_merged_index_from_disk(self, query_tokens: list[str]) -> dict:
         """
         Constructs inverted index containing only query tokens from partial inverted index stored on disk
         
@@ -114,71 +109,55 @@ class InvertedIndex:
             query_tokens (list[str]): 
 
         Returns:
-            dict[str, list[tuple[int, int, float]]]: inverted index which contains only the query tokens entries from the partial index
+            dict: inverted index which contains only the query tokens entries from the partial index
         """
-        merged_index = {}
-        for file_name in os.listdir(PARTIAL_INDEX_DIR): 
-            file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
-            with open(file_path, "r", encoding="utf-8") as f: 
-                index_part = json.load(f)
 
-            for token in query_tokens: 
-                if token in index_part: 
-                    if token in merged_index: 
-                        merged_index[token].extend(index_part[token])
-                    else: 
-                        merged_index[token] = index_part[token]
+        merged_index = {}
+
+        for token in query_tokens:
+            partial_index_char = token[0]
+            dir_name = os.path.join(PARTIAL_INDEX_DIR + '/' + partial_index_char)
+            for root, dirs, files in os.walk(dir_name):
+                for file_name in files:
+                    # Read in partial index from file
+                    partial_index = self.__read_partial_index_from_disk(os.path.join(dir_name, file_name))
+                    
+                    # Search for token in partial index and add found query tokens to merged_index
+                    if token in partial_index: 
+                        if token in merged_index: 
+                            merged_index[token].extend(partial_index[token])
+                        else: 
+                            merged_index[token] = partial_index[token]
 
         return merged_index
-    
-    def load_doc_id_map_from_disk(self) -> dict[str, str]:
-        """Load the doc_id map to get urls"""
 
-        if os.path.exists(DOC_ID_MAP_FILE):
-            with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
-                doc_id_map = json.load(f)
-        else:
-            self.logger.error("Unable to load doc id map. Path does not exist: {DOC_ID_MAP_FILE}")
-            doc_id_map = {}
+    def load_meta_data_from_disk(self) -> dict:
+        """Load index meta file from disk"""
+        return read_json_file(META_DATA_FILE, self.logger)
 
-        return doc_id_map
+    def load_doc_id_map_from_disk(self) -> dict:
+        """Load the doc_id map from disk to get urls"""
+        return read_json_file(DOC_ID_MAP_FILE, self.logger)
     
-    def load_doc_norms_from_disk(self) -> dict[int, float]:
+    def load_doc_norms_from_disk(self) -> dict:
         """
         Loads the precomputed document norms from disk.
 
         Returns:
             dict[int, float]: A dictionary mapping document IDs(int) to their norm values(float).
         """
-
-        if os.path.exists(DOC_NORMS_FILE):
-            with open(DOC_NORMS_FILE, "r", encoding="utf-8") as f:
-                doc_norms = json.load(f)
-
-            # Coverty keys to int and values to float
-            doc_norms = {int(key): float(value) for key, value in doc_norms.items()}
-        else:
-            self.logger.error("Unable to load document norms. Path does not exist: {DOC_NORMS_FILE}")
-            doc_norms = {}
-
+        doc_norms = read_json_file(DOC_NORMS_FILE, self.logger)
+        doc_norms = {int(key): float(value) for key, value in doc_norms.items()}
         return doc_norms
 
-    def load_master_index_from_disk(self) -> dict[str, list[tuple[int, int, float]]]:
+    def load_master_index_from_disk(self) -> dict[str, list]:
         """
         Load master index from dist
 
         Returns: 
-            dict[str, list[tuple[int, int, float]]]: A dictionary mapping token(str) to postings(list[tuple[int, int, float])
+            dict[str, list]: A dictionary mapping token(str) to postings(list[tuple[int, int, float])
         """
-        
-        if os.path.exists(MASTER_INDEX_FILE):
-            with open(MASTER_INDEX_FILE, "r", encoding="utf-8") as f:
-                index_data = json.load(f)
-        else:
-            self.logger.error("Unable to load master index. Path does not exist: {MASTER_INDEX_FILE}")
-            index_data = {}
-
-        return index_data
+        return read_json_file(MASTER_INDEX_FILE, self.logger)
 
     def precompute_document_norms(self) -> None:
         """
@@ -192,8 +171,9 @@ class InvertedIndex:
 
         self.logger.info("Precomputing document normals...")
 
+        #TODO: do no use the master index
         master_index = self.load_master_index_from_disk()
-        total_docs = self.doc_count_total
+        total_docs = self.total_doc_indexed
         doc_norms = defaultdict(float)
         
         # Compute document vector norms by summing squared token weights
@@ -208,9 +188,13 @@ class InvertedIndex:
         for doc_id in doc_norms:
             doc_norms[doc_id] = math.sqrt(doc_norms[doc_id])
 
-        # Save computed doc norms to disk
-        with open(DOC_NORMS_FILE, "w", encoding="utf-8") as f:
-            json.dump(doc_norms, f, indent=4)
+        try:
+            # Save computed doc norms to disk
+            with open(DOC_NORMS_FILE, "w", encoding="utf-8") as f: 
+                json.dump(doc_norms, f, indent=4)
+        except Exception as e:
+            self.logger.error(f"Unable to save precomputed document norms to file: {e}")
+
 
         self.logger.info(f"Document norms saved to: {DOC_NORMS_FILE}")
         
@@ -226,7 +210,7 @@ class InvertedIndex:
         """
 
         # Read json file from disk
-        data = self.__read_json_file(file_path)
+        data = read_json_file(file_path, self.logger)
         if not data:
             self.logger.warning(f"Skipping empty JSON file: {file_path}")
             return
@@ -234,19 +218,32 @@ class InvertedIndex:
         # Extract url and check that is valid
         url = clean_url(data['url'])
         if is_non_html_extension(url):
-            self.logger.warning(f"Skipping url with non html extension")
+            self.logger.warning(f"Skipping url with non html extension - {url}")
             return
 
         content = data['content']
-        if not content:
-            self.logger.warning(f"Skipping empty content: {file_path}")
+
+        if not content: 
+            self.logger.warning(f"Skipping doc {doc_id}: empty content - {url}")
             return
         if is_xml(content):
-            self.logger.warning(f"Skipping content is XML: {file_path}")
+            self.logger.warning(f"Skipping doc {doc_id}: content is XML - {url}")
             return
 
         # Extract tokens from html content
         tokens = self.__extract_tokens_with_weighting(content)
+
+        # Check for near and exact duplicate content (Simhash); Simhash also covers exact duplicate which has dist == 0
+        current_page_hash = simhash.compute_simhash(tokens)
+        for visited_page_hash in self.visited_content_simhashes:
+            dist = simhash.calculate_hash_distance(current_page_hash, visited_page_hash)
+            if dist == 0:  # Exact-duplicate
+                self.logger.warning(f"Skipping doc {doc_id}: Exact Duplicate Content Match with Dist={dist} - {url}")
+                return []
+            elif dist < simhash.THRESHOLD:  # Near-duplicate
+                self.logger.warning(f"Skipping doc {doc_id}: Near Duplicate Content Match with Dist={dist} - {url}")
+                return []
+        self.visited_content_simhashes.add(current_page_hash)
 
         # Update doc id map
         self.__update_doc_id_map(doc_id, url)
@@ -267,34 +264,10 @@ class InvertedIndex:
 
                 # Track # of documents counted per alphanumerical character
                 alphanumerical_indexes_modified.add(first_char)
+        
+        self.__dump_to_disk(alphanumerical_indexes_modified)
 
-        # Note which partial indexes were updated and dump if necessary
-        for char_modified in alphanumerical_indexes_modified:
-            # Get the existing tuple of counts, initialize (0, 0) if none
-            currentIndexCounter = self.alphanumerical_counts.get(char_modified, IndexCounter(docCount = 0, indexNum = 0))
-
-            # Increment number of documents stored per character
-            currentIndexCounter = IndexCounter(docCount = currentIndexCounter.docCount + 1, indexNum=currentIndexCounter.indexNum)
-            self.alphanumerical_counts[char_modified] = currentIndexCounter
-
-            # Dump partial index if it exceeds PARTIAL_INDEX_DOC_THRESHOLD
-            # TODO: Consider DELETEing ALL codes that calculates/saves "docCount of modified files" like code below for example
-            # NOTE: (DEPRECATED/DELETE ALL RELATED CODE!): if self.alphanumerical_counts[char_modified].docCount >= PARTIAL_INDEX_DOC_THRESHOLD:
-            if self.alphanumerical_counts[char_modified].docCount % DOC_THRESHOLD_COUNT == 0:
-                if (asizeof(self.alphanumerical_index[char_modified]) / 1024) >= PARTIAL_INDEX_SIZE_THRESHOLD_KB:  # Compare in KB
-                    self.logger.info(f"Current file size is {round(asizeof(self.alphanumerical_index[char_modified]) / 1024, 3)}KB")
-
-                    # Dump the partial index to disk
-                    self.__dump_to_disk(char_modified)
-
-                    # Reset count
-                    currentIndexCounter = IndexCounter(docCount = 0, indexNum = currentIndexCounter.indexNum + 1)
-                    self.alphanumerical_counts[char_modified] = currentIndexCounter
-
-                    # Reset the partial index within memory
-                    self.alphanumerical_index[char_modified].clear()
-
-
+        self.total_doc_indexed += 1 
 
     def __update_doc_id_map(self, doc_id: int, url: str) -> None:
         """
@@ -309,34 +282,21 @@ class InvertedIndex:
         self.doc_id_map[doc_id] = url
 
     def __save_meta_data_to_disk(self) -> None: 
-        """"""
+        """
+        Saves meta data about the inverted index to disk to be read back when preforming query
+        """
 
         meta_data = {
-            "doc_count_total": self.doc_count_total,
-            "average_doc_length": self.average_doc_length
+            "corpus_size" : self.doc_id,
+            "total_doc_indexed": self.total_doc_indexed
         }
-        
-        # write index to file
-        with open(META_DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(meta_data, f, indent=4)
+        write_json_file(META_DATA_FILE, meta_data, self.logger)
 
     def __save_doc_id_map_to_disk(self) -> None: 
         """
         Saves the Doc_ID-URL mapping to disk as a JSON file
         """
-
-        if os.path.exists(DOC_ID_MAP_FILE):
-            with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
-                existing_map = json.load(f)
-        else: 
-            existing_map = {}
-
-        for key, value in self.doc_id_map.items(): 
-            existing_map[key] = value
-        
-        # write index to file
-        with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
-            json.dump(existing_map, f, indent=4)
+        write_json_file(DOC_ID_MAP_FILE, self.doc_id_map, self.logger)
 
     def __save_index_to_disk(self, partial_index_char: str) -> None: 
         """
@@ -349,41 +309,54 @@ class InvertedIndex:
         # Create a new .txt partial index file
         filepath = PARTIAL_INDEX_DIR + '/' + partial_index_char
         index_file = os.path.join(filepath, f"index_part_{self.alphanumerical_counts[partial_index_char].indexNum}.txt")
+        try: 
+            with open(index_file, "w", encoding="utf-8") as f:
+                partial_index = self.alphanumerical_index[partial_index_char].items()
+                # Merge exisiting index with new data from in memory index
+                for token, postings in partial_index: 
+                    # Serialize posting: each posting is represented as doc_id,freq,tf
+                    postings_str = " ".join([f"{docid},{freq},{tf}" for docid, freq, tf in postings])
+                    f.write(f"{token};{postings_str}\n")
+            self.logger.info(f"Partial index saved to {index_file}")
+        except Exception as e:
+            self.logger.error(f"Unable to save partial index to disk: {index_file} - {e}")
 
-        with open(index_file, "w", encoding="utf-8") as f:
-            partial_index = self.alphanumerical_index[partial_index_char].items()
-            # Merge exisiting index with new data from in memory index
-            for token, postings in partial_index: 
-                # Serialize posting: each posting is represented as doc_id,freq,tf
-                postings_str = " ".join([f"{docid},{freq},{tf}" for docid, freq, tf in postings])
-                f.write(f"{token};{postings_str}\n")
-
-        self.logger.info(f"Partial index saved to {index_file}")
-
-    def __dump_to_disk(self, partial_index_char: str): 
+    def __dump_to_disk(self, alphanumerical_indexes_modified: set, threshhold: int = PARTIAL_INDEX_DOC_THRESHOLD) -> None:
         """
         Saves partial inverted index and doc_id map to
         disk, then clears them from memory.
         """
-        self.__save_index_to_disk(partial_index_char)
-        self.__save_doc_id_map_to_disk()
-        self.doc_id_map.clear()
+
+        is_disk_index_updated = False
+        # Note which partial indexes were updated and dump if necessary
+        for char_modified in alphanumerical_indexes_modified:
+            # Get the existing tuple of counts, initialize (0, 0) if none
+            currentIndexCounter = self.alphanumerical_counts.get(char_modified, IndexCounter(docCount = 0, indexNum = 0))
+
+            # Increment number of documents stored per character
+            currentIndexCounter = IndexCounter(docCount = currentIndexCounter.docCount + 1, indexNum=currentIndexCounter.indexNum)
+            self.alphanumerical_counts[char_modified] = currentIndexCounter
+
+            # TODO: Modify to dump on file size rather than document threshold. You should do this by getting the size of the posting list
+            # Dump partial index if it exceeds PARTIAL_INDEX_DOC_THRESHOLD
+            if self.alphanumerical_counts[char_modified].docCount % DOC_THRESHOLD_COUNT == 0:
+              if (asizeof(self.alphanumerical_index[char_modified]) / 1024) >= PARTIAL_INDEX_SIZE_THRESHOLD_KB:  # Compare in KB
+                  is_disk_index_updated = True
+                  self.__save_index_to_disk(char_modified)
+
+                  # Reset count
+                  currentIndexCounter = IndexCounter(docCount = 0, indexNum = currentIndexCounter.indexNum + 1)
+                  self.alphanumerical_counts[char_modified] = currentIndexCounter
+
+                  # Reset the partial index within memory
+                  self.alphanumerical_index[char_modified].clear()
+        
+        if is_disk_index_updated: 
+            # Update the doc_id map if index on disk is updated
+            self.__save_doc_id_map_to_disk()
+            self.doc_id_map.clear()
+
         gc.collect()
-
-    def __construct_token_freq_counter(tokens: list[str]) -> Counter:  # NOTE: This is Not a member function
-        """
-        Counts the apparence frequency a token in a list of tokens from a single document
-        
-        Parameters:
-        tokens (list[str]): A list of tokens from a single document
-
-        Returns:
-        Counter: A list of tuple pairs the token string and an integer of the frequency of token in tokens list
-        """
-        
-        counter = Counter()
-        counter.update(tokens)
-        return counter
 
     def __extract_tokens_with_weighting(self, content: str, weigh_factor: int = 2) -> list[str]: 
         """
@@ -428,32 +401,9 @@ class InvertedIndex:
             return weighted_tokens
         except Exception as e:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
-            return None 
-    
-    def __read_json_file(self, file_path: str) -> dict[str, str]:
-        """
-        Parameters:
-            file_path (str): File path to json document in local file storage
-
-        Returns:
-            dict[str, str]: returns the data stored in the json file as a python dictionary
-        """
-        try:
-            with open(file_path, 'r') as file: 
-                data = json.load(file)
-                # self.logger.info(f"Success: Load JSON file: {file_path}")
-                return data
-        except FileNotFoundError:
-            self.logger.error(f"File note found at path: {file_path}")
-            return None 
-        except json.JSONDecodeError: 
-            self.logger.error(f"Invalid JSON format in file:  {file_path}")
-            return None 
-        except Exception as e:
-            self.logger.error(f"An unexpected error has orccurred: {e}") 
             return None
-       
-    def __read_partial_index_from_disk(self, file_path: str) -> dict[str, list[tuple[int, int, float]]]:
+    
+    def __read_partial_index_from_disk(self, file_path: str) -> dict:
         """
         Reads/deserializes partial inverted index from file
         [LINE FORMAT] token;docid1,freq1,tf1 docid2,freq2,tf2 docid3,freq3,tf3\n
@@ -466,16 +416,19 @@ class InvertedIndex:
 
         """
         inverted_index = defaultdict(list[tuple[int, int, float]])
-        with open(file_path, "r", encoding="utf-8") as f:
-            for line in f:
-                # if len(tok_post) < 2:  # NOTE: Omitting bound checking for performance
-                #     continue  # Skip the line if data in wrong format (either token or posting doesn't exist)
-                token, postings_str = line.strip().split(";")
-                postings = []
-                for posting in postings_str.split():
-                    docid, freq, tf = posting.split(",")
-                    postings.append((int(docid), int(freq), float(tf)))
-                inverted_index[token] = postings
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    # if len(tok_post) < 2:  # NOTE: Omitting bound checking for performance
+                    #     continue  # Skip the line if data in wrong format (either token or posting doesn't exist)
+                    token, postings_str = line.strip().split(";")
+                    postings = []
+                    for posting in postings_str.split():
+                        docid, freq, tf = posting.split(",")
+                        postings.append((int(docid), int(freq), float(tf)))
+                    inverted_index[token] = postings
+        except Exception as e:
+            self.logger.error(f"Unable to read .txt file: {e}")
 
         return inverted_index
 
@@ -483,3 +436,20 @@ class InvertedIndex:
     @staticmethod
     def __compute_tf(term_freq: int, doc_length: int)->int: 
         return term_freq / doc_length
+    
+    @staticmethod
+    def __construct_token_freq_counter(tokens: list[str]) -> Counter:
+        """
+        Counts the apparence frequency a token in a list of tokens from a single document
+        
+        Parameters:
+            tokens (list[str]): A list of tokens from a single document
+
+        Returns:
+            Counter: A list of tuple pairs the token string and an integer of the frequency of token in tokens list
+        """
+        
+        counter = Counter()
+        counter.update(tokens)
+        return counter
+    

@@ -1,7 +1,9 @@
 import re
 import os
 import math
+import json
 import logging
+from logging import Logger
 from urllib.parse import urlparse
 from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
@@ -77,6 +79,53 @@ def lemmatize_tokens(tokens: list[str]) -> list[str]:
     """
     return [lemmatizer.lemmatize(token) for token in tokens]
 
+def read_json_file(file_path: str, logger: Logger) -> dict:
+    """
+    Parameters:
+        file_path (str): File path to json document in local file storage
+        logger (Logger):
+    Returns:
+        dict: returns the data stored in the json file as a python dictionary
+    """
+    try:
+        with open(file_path, 'r') as file: 
+            data = json.load(file)
+            logger.info(f"Success: Data read from json file: {file_path}")
+            return data
+    except FileNotFoundError:
+        logger.error(f"File note found at path: {file_path}")
+        return None 
+    except json.JSONDecodeError: 
+        logger.error(f"Invalid JSON format in file:  {file_path}")
+        return None 
+    except Exception as e:
+        logger.error(f"An unexpected error has orccurred: {file_path} - {e}") 
+        return None
+
+def write_json_file(file_path: str, data: dict, logger: Logger) -> None:
+    """
+    Parameters:
+        file_path (str): File path to json document in local file storage
+        logger (Logger):
+    """
+    try:
+        new_data = {}
+        # Check if there is already data save in the file
+        if os.path.exists(file_path):
+            logger.warning(f"Existing data in json file: {file_path}")
+            with open(file_path, "r", encoding="utf-8") as f: 
+                new_data = json.load(f)
+
+        # Combine existing and new data
+        for key, value in data.items(): 
+            new_data[key] = value
+
+        # write data to file
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(new_data, f, indent=4)
+            logger.info(f"Successful data write to json file: {file_path}")
+    except Exception as e:
+        logger.error(f"Unable to write data to json file: {file_path} - {e}")
 
 def stem_tokens(tokens: list[str]) -> list[str]:
     """
@@ -88,7 +137,7 @@ def stem_tokens(tokens: list[str]) -> list[str]:
     Returns:
         list[str]: a lemmatized list of tokens
     """
-    
+
     return [stemmer.stem(token) for token in tokens]
 
 def tokenize_text(text: str) -> list[str]:
@@ -104,7 +153,6 @@ def tokenize_text(text: str) -> list[str]:
 
     tokens =  word_tokenize(text.lower())
     return [token for token in tokens if token.isalnum()]
-    # return tokenizer.tokenize(text)
 
 def is_non_html_extension(url: str) -> bool: 
     parsed_url = urlparse(url)

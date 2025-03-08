@@ -3,3 +3,4 @@ nltk
 urllib3
 numpy
 pympler
+flask
