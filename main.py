@@ -5,7 +5,7 @@ from summary import retrive_relevant_urls
 
 from flask import Flask, render_template, request
 from inverted_index import InvertedIndex
-from search import expand_query, search_cosine_similarity  # assuming your search function is defined here
+from query import expand_query, ranked_search_cosine_similarity  # assuming your search function is defined here
 from utils import tokenize_text, stem_tokens
 
 app = Flask(__name__)
@@ -20,7 +20,7 @@ def index():
             # Tokenize and stem the query string
             query_tokens = tokenize_text(expand_query(query))
             # Run the search function. It returns a list of (doc_id, score) tuples.
-            results = search_cosine_similarity(query_tokens, inverted_index)
+            results = ranked_search_cosine_similarity(query_tokens, inverted_index)
             # Convert the doc_ids to URLs (show top 10 results)
             for doc_id, score in results[:10]:
                 # Ensure doc_id key type matches that in the doc_id_map

@@ -90,7 +90,7 @@ def read_json_file(file_path: str, logger: Logger) -> dict:
     try:
         with open(file_path, 'r') as file: 
             data = json.load(file)
-            logger.info(f"Success: Data read from json file: {file_path}")
+            # logger.info(f"Success: Data read from json file: {file_path}")
             return data
     except FileNotFoundError:
         logger.error(f"File note found at path: {file_path}")
