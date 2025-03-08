@@ -10,8 +10,9 @@ from datastructures import IndexCounter
 from pympler.asizeof import asizeof
 
 # Constants 
-# PARTIAL_INDEX_DOC_THRESHOLD = 500 # Dump index to latest JSON file every 100 docs (NOTE: DEPRECATED)
-PARTIAL_INDEX_SIZE_THRESHOLD_KB = 1000  # set threshold to 1000 KB (margin of error: 300KB)
+PARTIAL_INDEX_SIZE_THRESHOLD_KB = 20000  # set threshold to 20000 KB (margin of error: 1000KB)
+DOC_THRESHOLD_COUNT = 125
+
 
 META_DIR            = "index/meta_data"    # "index/doc_id_map"
 PARTIAL_INDEX_DIR   = "index/partial_index" # "index/partial_index"
@@ -279,16 +280,19 @@ class InvertedIndex:
             # Dump partial index if it exceeds PARTIAL_INDEX_DOC_THRESHOLD
             # TODO: Consider DELETEing ALL codes that calculates/saves "docCount of modified files" like code below for example
             # NOTE: (DEPRECATED/DELETE ALL RELATED CODE!): if self.alphanumerical_counts[char_modified].docCount >= PARTIAL_INDEX_DOC_THRESHOLD:
-            if (asizeof(self.alphanumerical_index[char_modified]) / 1024) >= PARTIAL_INDEX_SIZE_THRESHOLD_KB:
-                # Dump the partial index to disk
-                self.__dump_to_disk(char_modified)
+            if self.alphanumerical_counts[char_modified].docCount % DOC_THRESHOLD_COUNT == 0:
+                if (asizeof(self.alphanumerical_index[char_modified]) / 1024) >= PARTIAL_INDEX_SIZE_THRESHOLD_KB:  # Compare in KB
+                    self.logger.info(f"Current file size is {round(asizeof(self.alphanumerical_index[char_modified]) / 1024, 3)}KB")
 
-                # Reset count
-                currentIndexCounter = IndexCounter(docCount = 0, indexNum = currentIndexCounter.indexNum + 1)
-                self.alphanumerical_counts[char_modified] = currentIndexCounter
+                    # Dump the partial index to disk
+                    self.__dump_to_disk(char_modified)
 
-                # Reset the partial index within memory
-                self.alphanumerical_index[char_modified].clear()
+                    # Reset count
+                    currentIndexCounter = IndexCounter(docCount = 0, indexNum = currentIndexCounter.indexNum + 1)
+                    self.alphanumerical_counts[char_modified] = currentIndexCounter
+
+                    # Reset the partial index within memory
+                    self.alphanumerical_index[char_modified].clear()
 
 
 
