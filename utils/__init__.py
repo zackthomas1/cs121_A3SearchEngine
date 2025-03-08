@@ -28,7 +28,7 @@ def compute_tf_idf(tf: int, doc_freq: int, total_docs: int) -> int:
         int: The tf-idf score
     """
 
-    idf = math.log(total_docs / (1+doc_freq))
+    idf = math.log((total_docs / (1+doc_freq)), base=10)
 
     return tf * idf
 
