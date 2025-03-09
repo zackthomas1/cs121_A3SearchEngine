@@ -457,6 +457,7 @@ class InvertedIndex:
             if soup.title:
                 title_text = soup.title.get_text()
                 title_tokens = tokenize_text(title_text)
+                title_tokens = stem_tokens(title_text)
                 for token in title_tokens:
                     structural_weights[token] += 1.0  # bonus for title
 
@@ -464,6 +465,7 @@ class InvertedIndex:
             for header in soup.find_all(['h1', 'h2', 'h3']):
                 header_text = header.get_text()
                 header_tokens = tokenize_text(header_text)
+                header_tokens = stem_tokens(header_text)
                 for token in header_tokens:
                     structural_weights[token] += 0.75  # bonus for headers
             
@@ -471,6 +473,7 @@ class InvertedIndex:
             for bold in soup.find_all(['b', 'strong']):
                 bold_text = bold.get_text()
                 bold_tokens = tokenize_text(bold_text)
+                bold_tokens = stem_tokens(bold_text)
                 for token in bold_tokens:
                     structural_weights[token] += 0.5  # bonus for bold text
 
