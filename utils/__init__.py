@@ -144,7 +144,7 @@ def write_json_file(file_path: str, data: dict, logger: Logger, overwrite: bool 
         if not overwrite:
             # Check if there is already data save in the file
             if os.path.exists(file_path):
-                logger.warning(f"Overwrite enabled and existing json file found: {file_path}")
+                logger.warning(f"Existing json file found. Operation may caause data lose: {file_path}")
                 with open(file_path, "r", encoding="utf-8") as f: 
                     new_data = json.load(f)
 

@@ -10,7 +10,7 @@ from datastructures import IndexCounter
 from pympler.asizeof import asizeof
 
 # Constants 
-PARTIAL_INDEX_SIZE_THRESHOLD_KB = 6000  # set threshold to 20000 KB (margin of error: 5000 KB)
+PARTIAL_INDEX_SIZE_THRESHOLD_KB = 9000  # set threshold to 20000 KB (margin of error: 5000 KB)
 DOC_THRESHOLD_COUNT = 125
 
 MASTER_INDEX_DIR        = "index/master_index"  # "index/master_index"
@@ -19,6 +19,7 @@ PARTIAL_INDEX_DIR       = "index/partial_index" # "index/partial_index"
 TOKEN_TO_FILE_MAP_DIR   = "index/meta_data/token_to_file_map"
 
 DOC_ID_MAP_FILE     = os.path.join(META_DIR, "doc_id_map.json")
+DOC_LENGTH_FILE     = os.path.join(META_DIR, "doc_length.json")
 DOC_NORMS_FILE      = os.path.join(META_DIR, "doc_norms.json")
 MASTER_INDEX_FILE   = os.path.join(MASTER_INDEX_DIR, "master_index.json")
 META_DATA_FILE      = os.path.join(META_DIR, "meta_data.json")
@@ -33,6 +34,7 @@ class InvertedIndex:
         self.alphanumerical_counts: dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
         
         self.doc_id_map = defaultdict(str) # {doc_id: url}
+        self.doc_lengths = defaultdict()
         self.visited_content_simhashes = set()
 
         self.doc_id = 0
@@ -117,7 +119,7 @@ class InvertedIndex:
         for token in query_tokens:
             if token in token_to_file_map:
                     file_list = token_to_file_map[token]
-                    # self.logger.info(f"'{token}' found in {len(file_list)} file/s")
+                    self.logger.info(f"'{token}' found in {len(file_list)} file/s")
                     for file_path in file_list:
                         # Read in partial index from file
                         partial_index = self.__read_partial_index_from_disk(file_path)
@@ -139,6 +141,14 @@ class InvertedIndex:
         """
         return read_json_file(DOC_ID_MAP_FILE, self.logger)
     
+    def load_doc_lengths_from_disk(self) -> dict:
+        """
+        Load the doc length map from disk
+        Returns: 
+            dict: A dictionary mapping doc id numbers to length of the document
+        """
+        return read_json_file(DOC_LENGTH_FILE, self.logger)
+
     def load_doc_norms_from_disk(self) -> dict:
         """
         Loads the precomputed document norms from disk.
@@ -276,6 +286,7 @@ class InvertedIndex:
 
         # Update doc id map
         self.__update_doc_id_map(doc_id, url)
+        self.__update_doc_lengths(doc_id, len(tokens))
 
         # Tokenize text
         token_freq = InvertedIndex.__construct_token_freq_counter(tokens)
@@ -310,14 +321,25 @@ class InvertedIndex:
 
         self.doc_id_map[doc_id] = url
 
+    def __update_doc_lengths(self, doc_id: int, doc_length: int) -> None: 
+        """
+        
+        """
+        
+        self.doc_lengths[doc_id] = doc_length
+
     def __save_meta_data_to_disk(self) -> None: 
         """
         Saves meta data about the inverted index to disk to be read back when preforming query
         """
+        total_length = sum(self.doc_lengths.values())
+        num_docs = len(self.doc_lengths)
+        doc_length_avg = total_length / num_docs if num_docs > 0 else 0.0
 
         meta_data = {
+            "avg_doc_length": doc_length_avg,
             "corpus_size" : self.doc_id,
-            "total_doc_indexed": self.total_doc_indexed
+            "total_doc_indexed": self.total_doc_indexed,
         }
         write_json_file(META_DATA_FILE, meta_data, self.logger)
 
@@ -326,6 +348,12 @@ class InvertedIndex:
         Saves the Doc_ID-URL mapping to disk as a JSON file
         """
         write_json_file(DOC_ID_MAP_FILE, self.doc_id_map, self.logger)
+
+    def __save_doc_lengths_to_disk(self) -> None: 
+        """
+        Saves the Doc_ID-URL mapping to disk as a JSON file
+        """
+        write_json_file(DOC_LENGTH_FILE, self.doc_lengths, self.logger)
 
     def __save_index_to_disk(self, partial_index_char: str) -> None: 
         """
@@ -385,6 +413,8 @@ class InvertedIndex:
             # Update the doc_id map if index on disk is updated
             self.__save_doc_id_map_to_disk()
             self.doc_id_map.clear()
+            self.__save_doc_lengths_to_disk()
+            self.doc_lengths.clear()
 
         gc.collect()
 
