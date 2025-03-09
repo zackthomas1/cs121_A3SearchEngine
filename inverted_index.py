@@ -1,13 +1,11 @@
 import os
 import gc
-import time
 import math
-import json
 import simhash
 import pickle
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
-from utils import clean_url, compute_tf_idf, get_logger, read_json_file, write_json_file, tokenize_text, is_non_html_extension, is_xml
+from utils import clean_url, compute_tf_idf, get_logger, read_pickle_file, write_pickle_file, read_json_file, write_json_file, tokenize_text, is_non_html_extension, is_xml
 from datastructures import IndexCounter
 from pympler.asizeof import asizeof
 
@@ -175,7 +173,7 @@ class InvertedIndex:
         Returns: 
             dict: A dictionary mapping tokens(str) to files(str)
         """
-        return read_json_file(TOKEN_TO_FILE_MAP_FILE, self.logger)
+        return read_pickle_file(TOKEN_TO_FILE_MAP_FILE, self.logger)
 
     def precompute_doc_norms(self) -> None:
         """
@@ -325,28 +323,22 @@ class InvertedIndex:
 
     def __save_index_to_disk(self, partial_index_char: str) -> None: 
         """
-        Store the current in-memory partial index to a .txt file.
-        Each line in the file is formatted as:
-        token;doc_id1,freq1,tf1 doc_id2,freq2,tf2 ...
+        Store the current in-memory partial index to a .pkl file
         """
         self.logger.info(f"Saving '{partial_index_char}' index to disk...")
         
         # Create a new .txt partial index file
         filepath = PARTIAL_INDEX_DIR + '/' + partial_index_char
         index_file = os.path.join(filepath, f"index_part_{self.alphanumerical_counts[partial_index_char].indexNum}.pkl")
-        try: 
-            with open(index_file, "wb") as f:
-                pickle.dump(self.alphanumerical_index[partial_index_char], f)
-                self.logger.info(f"Partial index saved to {index_file}")
+        write_pickle_file(index_file, self.alphanumerical_index[partial_index_char], self.logger)
             
+        def save_token_to_file_map_disk(partial_index_char: str, index_file: str) -> None: 
             # Update token-to-file mapping
             for token in self.alphanumerical_index[partial_index_char]:
                 self.token_to_file_map[token].append(index_file)
-            write_json_file(TOKEN_TO_FILE_MAP_FILE, self.token_to_file_map, self.logger)
-            self.token_to_file_map.clear()
+            write_pickle_file(TOKEN_TO_FILE_MAP_FILE, self.token_to_file_map, self.logger)
 
-        except Exception as e:
-            self.logger.error(f"Unable to save partial index to disk: {index_file} - {e}")
+        save_token_to_file_map_disk(partial_index_char, index_file)
 
     def __dump_to_disk(self, alphanumerical_indexes_modified: set, override: bool = False) -> None:
         """
@@ -441,14 +433,7 @@ class InvertedIndex:
             dict[str, list[tuple[int, int, float]]]:
 
         """
-        partial_index = defaultdict(list)
-        try:
-            with open(file_path, "rb") as f:
-                partial_index = pickle.load(f)
-        except Exception as e:
-            self.logger.error(f"Unable to read .txt file: {e}")
-
-        return partial_index
+        return read_pickle_file(file_path, self.logger)
 
     # Non-member functions
     @staticmethod
