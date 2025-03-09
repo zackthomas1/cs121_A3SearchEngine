@@ -24,8 +24,9 @@
         </div>
         {% if top_results %}
           <h2 class="mt-4">Top Results:</h2>
+          <p class="mt-4">Found {{ results_count }} results in {{ delta_time }} ms</p>
           <ul class="results list-unstyled">
-            {% for url in top_results %}
+            {% for url in top_results[:10] %}
               <li><a href="{{ url }}" target="_blank">{{ url }}</a></li>
             {% endfor %}
           </ul>
