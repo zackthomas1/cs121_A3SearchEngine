@@ -44,26 +44,69 @@ def expand_query(query: str, limit: int = 1) -> str:
     expanded_query = " ".join(expanded_words)
     return expanded_query
 
-def process_query(query: str) -> list[str]:
+from utils import remove_stop_words, stem_tokens, tokenize_text
+def process_query(query: str, n=2) -> list[str]:
     """
-    Processes a query. Transforms query string into list of query tokens
+    Processes a query by expanding, tokenizing, generating n-grams (before stemming), and then applying stemming.
 
     Parameters:
-        query (str): a raw query string 
+        query (str): The user's raw query.
+        n (int): Maximum n-gram size.
 
     Returns:
-        list[str]: processed list of query tokens
-
+        list[str]: A cleaned list of query tokens.
     """
-    expanded_query = expand_query(query.lower())
+    # Step 1: Expand the query with synonyms
+    expanded_query = expand_query(query.lower(), limit=1)
+    print(f"Expanded Query: {expanded_query}")
+
+    # Step 2: Tokenize (get individual words)
     query_tokens = tokenize_text(expanded_query)
-    query_tokens = remove_stop_words(query_tokens)
-    query_tokens = query_tokens + stem_tokens(query_tokens)
-    query_tokens = list(set(query_tokens))
+    print(f"Tokenized Query: {query_tokens}")
 
-    query_logger.info(f"Query Tokens: {query_tokens}")
+    # Step 3: Generate 2-grams and 3-grams from the original (unstemmed) tokens
+    bigrams = generate_ngrams(query_tokens, 2)
+    trigrams = generate_ngrams(query_tokens, 3)
 
-    return query_tokens
+    # Convert n-grams to string format
+    bigram_strings = [' '.join(bigram) for bigram in bigrams]
+    trigram_strings = [' '.join(trigram) for trigram in trigrams]
+
+    print(f"\n2-grams: {bigram_strings}")
+    print(f"3-grams: {trigram_strings}")
+
+    # Step 4: Apply stemming **AFTER** generating n-grams
+    stemmed_tokens = stem_tokens(query_tokens)  # Stem individual words
+    stemmed_bigrams = stem_tokens(bigram_strings)  # Stem 2-grams
+    stemmed_trigrams = stem_tokens(trigram_strings)  # Stem 3-grams
+
+    print(f"\nStemmed Unigrams: {stemmed_tokens}")
+    print(f"Stemmed 2-grams: {stemmed_bigrams}")
+    print(f"Stemmed 3-grams: {stemmed_trigrams}")
+
+    # Step 5: Remove duplicates and prepare the final query tokens
+    final_query_tokens = list(set(stemmed_tokens + stemmed_bigrams + stemmed_trigrams))
+    print("\nFinal Processed Query:")
+    print(f"Unigrams: {stemmed_tokens}")
+    print(f"2-grams: {stemmed_bigrams}")
+    print(f"3-grams: {stemmed_trigrams}")
+
+    return final_query_tokens
+
+
+def generate_ngrams(tokens, n=2):
+    """
+    Generates n-grams from a list of tokens.
+    
+    Parameters:
+        tokens (list): A list of tokens to generate n-grams from.
+        n (int): The size of the n-grams to generate.
+        
+    Returns:
+        list: A list of n-grams (tuples).
+    """
+    return [tuple(tokens[i:i+n]) for i in range(len(tokens) - n + 1)]
+
 
 def ranked_search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIndex, total_docs: int, precomputed_doc_norms: dict, token_to_file_map: dict) -> list:
     """

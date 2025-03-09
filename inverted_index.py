@@ -236,79 +236,8 @@ class InvertedIndex:
 
         write_json_file(DOC_NORMS_FILE, doc_norms, self.logger)
         self.logger.info(f"Document norms saved to: {DOC_NORMS_FILE}")
-        
-    def __process_document(self, file_path: str, doc_id: int) -> None:
-        """
-        Takes a file path to a document which stores an html page and updates the inverted index with tokens extracted from text content.
-        Reads the file from disk. Extracts the html content. Updates the doc_id-url map. Tokenize the textual content.
-        Update the inverted index with
 
-        Parameters:
-            file_path (str): The absolute file path to the document in the local file storage system
-            doc_id (int): The unique id for the document at the provided file location 
-        """
-
-        # Read json file from disk
-        data = read_json_file(file_path, self.logger)
-        if not data:
-            self.logger.warning(f"Skipping empty JSON file: {file_path}")
-            return
-        
-        # Extract url and check that is valid
-        url = clean_url(data['url'])
-        if is_non_html_extension(url):
-            self.logger.warning(f"Skipping url with non html extension - {url}")
-            return
-
-        content = data['content']
-
-        if not content: 
-            self.logger.warning(f"Skipping doc {doc_id}: empty content - {url}")
-            return
-        if is_xml(content):
-            self.logger.warning(f"Skipping doc {doc_id}: content is XML - {url}")
-            return
-
-        # Extract tokens from html content
-        tokens = self.__extract_tokens_with_weighting(content)
-
-        # Check for near and exact duplicate content (Simhash); Simhash also covers exact duplicate which has dist == 0
-        current_page_hash = simhash.compute_simhash(tokens)
-        for visited_page_hash in self.visited_content_simhashes:
-            dist = simhash.calculate_hash_distance(current_page_hash, visited_page_hash)
-            if dist == 0:  # Exact-duplicate
-                self.logger.warning(f"Skipping doc {doc_id}: Exact Duplicate Content Match with Dist={dist} - {url}")
-                return []
-            elif dist < simhash.THRESHOLD:  # Near-duplicate
-                self.logger.warning(f"Skipping doc {doc_id}: Near Duplicate Content Match with Dist={dist} - {url}")
-                return []
-        self.visited_content_simhashes.add(current_page_hash)
-
-        # Update doc id map
-        self.__update_doc_id_map(doc_id, url)
-        self.__update_doc_lengths(doc_id, len(tokens))
-
-        # Tokenize text
-        token_freq = InvertedIndex.__construct_token_freq_counter(tokens)
-
-        # Update the inverted index with document tokens
-        alphanumerical_indexes_modified = set() # Track which partial indexes are being updated this document
-        for token, freq in token_freq.items():
-            tf = InvertedIndex.__compute_tf(freq, len(tokens))
-
-            # Append token to alphanumerical_index
-            # Only process tokens that are alphanumerical
-            if (token[0].lower().isalnum() and token[0].lower().isascii()):
-                first_char = token[0].lower()
-                self.alphanumerical_index[first_char][token].append((doc_id, freq, tf))
-
-                # Track # of documents counted per alphanumerical character
-                alphanumerical_indexes_modified.add(first_char)
-        
-        self.__dump_to_disk(alphanumerical_indexes_modified)
-
-        self.total_doc_indexed += 1 
-
+  
     def __update_doc_id_map(self, doc_id: int, url: str) -> None:
         """
         Updates the document id-url index with the provided doc_id url pair.

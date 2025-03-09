@@ -23,9 +23,12 @@ def index():
     top_results = []
     if request.method == 'POST':
         query = request.form.get('query', '')
+        ngram_choice = int(request.form.get('ngram', 2))  # Get n-gram size (default to 2)
+
         if query:
             # Tokenize and stem the query string
-            query_tokens = process_query(query)
+            query_tokens = process_query(query, n=ngram_choice)
+
             ranked_results = ranked_search_cosine_similarity(query_tokens, inverted_index, total_docs, doc_norms, token_to_file_map)
             # 
             for doc_id, score in ranked_results:

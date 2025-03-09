@@ -1,41 +1,51 @@
 import time
 from inverted_index import InvertedIndex
 from query import process_query, ranked_search_cosine_similarity
+from generate_ngrams import generate_ngrams
 
-def count_tokens(index: InvertedIndex) -> int:
+def count_tokens(index: InvertedIndex, n=2) -> int:
     """
-    Counts total number of tokens in inverted index
+    Counts total number of tokens or n-grams in inverted index
     
     Parameters:
     index (InvertedIndex): 
+    n (int): The size of n-grams (default 2 for bigrams)
 
     Returns:
-    int: number of tokens in inverted index
+    int: number of tokens or n-grams in inverted index
     """
-
     index_data = index.load_master_index_from_disk()
-    return len(index_data.keys())
+    total_tokens = 0
 
-def count_unique_tokens(index: InvertedIndex) -> int:
+    for tokens in index_data.values():
+        # Count the n-grams in each document's token list
+        for token_list in tokens:
+            total_tokens += len(generate_ngrams(token_list[0], n))
+
+    return total_tokens
+
+
+def count_unique_tokens(index: InvertedIndex, n=2) -> int:
     """
-    Counts tokens that appear only once in a single document.
+    Counts unique tokens or n-grams that appear only once in a single document.
     
     Parameters:
     index (InvertedIndex): 
+    n (int): The size of n-grams (default 2 for bigrams)
 
     Returns:
-    int: tokens that appear only once in a single document
+    int: tokens or n-grams that appear only once in a single document
     """
-
     unique_tokens = set()
-
     index_data = index.load_master_index_from_disk()
 
-    # Iterate through all tokens
+    # Iterate through all tokens or n-grams
     for token, postings in index_data.items():
-        # Check if the token appears in exactly one document and has a frequency of 1
-        if len(postings) == 1 and postings[0][1] == 1:
-            unique_tokens.add(token)
+        # Generate n-grams for each token
+        for token_list in postings:
+            ngrams = generate_ngrams(token_list[0], n)
+            if len(postings) == 1 and token_list[1] == 1:  # Appears once in a document
+                unique_tokens.update(ngrams)
 
     return len(list(unique_tokens))
 
@@ -59,7 +69,7 @@ def retrive_relevant_urls(query: str, n: int, index: InvertedIndex) -> list[str]
     # avg_doc_length          = index.load_meta_data_from_disk()["aag_doc_length"]
     total_docs          = index.load_meta_data_from_disk()["total_doc_indexed"]    
 
-    query_tokens = process_query(query)
+    query_tokens = process_query(query, n_gram_size=n)  # Modify to pass n-gram size
 
     # Begin timing after recieving search query
     start_time = time.perf_counter() * 1000
