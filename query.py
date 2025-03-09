@@ -109,7 +109,7 @@ def ranked_search_cosine_similarity(query_tokens: list[str], inverted_index: Inv
         postings = merged_index[token]
         for doc_id, freq, tf, structural_weight in postings:
             df = len(postings)
-            doc_token_weight = compute_tf_idf(tf, df, total_docs)
+            doc_token_weight = compute_tf_idf(tf, df, total_docs) * structural_weight
             scores[doc_id] += query_weight * doc_token_weight
 
     # Normalize scores to obtain cosine similarity
