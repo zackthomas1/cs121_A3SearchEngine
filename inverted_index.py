@@ -13,7 +13,6 @@ from pympler.asizeof import asizeof
 PARTIAL_INDEX_SIZE_THRESHOLD_KB = 2000  # set threshold to 20000 KB (margin of error: 5000 KB)
 DOC_THRESHOLD_COUNT = 125
 
-
 MASTER_INDEX_DIR    = "index/master_index"  # "index/master_index"
 META_DIR            = "index/meta_data"    # "index/doc_id_map"
 PARTIAL_INDEX_DIR   = "index/partial_index" # "index/partial_index"
@@ -173,7 +172,7 @@ class InvertedIndex:
         Returns: 
             dict: A dictionary mapping tokens(str) to files(str)
         """
-        return read_pickle_file(TOKEN_TO_FILE_MAP_FILE, self.logger)
+        return read_json_file(TOKEN_TO_FILE_MAP_FILE, self.logger)
 
     def precompute_doc_norms(self) -> None:
         """
@@ -336,7 +335,7 @@ class InvertedIndex:
             # Update token-to-file mapping
             for token in self.alphanumerical_index[partial_index_char]:
                 self.token_to_file_map[token].append(index_file)
-            write_pickle_file(TOKEN_TO_FILE_MAP_FILE, self.token_to_file_map, self.logger)
+            write_json_file(TOKEN_TO_FILE_MAP_FILE, self.token_to_file_map, self.logger, True)
 
         save_token_to_file_map_disk(partial_index_char, index_file)
 
