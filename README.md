@@ -47,13 +47,23 @@ $ ```deactivate```
             "args": []
         },
         {
-            "name": "Python Debug: build_index.py",
+            "name": "Python Debug: build_index.py full corpus",
             "type": "debugpy",
             "request": "launch",
             "program": "build_index.py",
             "console": "integratedTerminal",
             "args": [
-                "--rootdir", "corpus"
+                "--rootdir", "dev/corpus"
+            ]
+        },
+        {
+            "name": "Python Debug: build_index.py small corpus",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "build_index.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--rootdir", "dev/small_corpus"
             ]
         },
         {
