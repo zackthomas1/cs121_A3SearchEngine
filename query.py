@@ -9,7 +9,7 @@ EPSILON = 0.00001
 
 query_logger = get_logger("QUERY")
 
-def expand_query(query: str, limit: int = 2) -> str: 
+def expand_query(query: str, limit: int = 1) -> str: 
     """
     Expands input query by adding synonyms using nltk wordnet
 
@@ -41,7 +41,6 @@ def expand_query(query: str, limit: int = 2) -> str:
         
     # return expanded query as single string
     expanded_query = " ".join(expanded_words)
-    query_logger.info(f"Query Expanded to: {expanded_query}")
     return expanded_query
 
 def process_query(query: str) -> list[str]:
@@ -55,10 +54,13 @@ def process_query(query: str) -> list[str]:
         list[str]: processed list of query tokens
 
     """
-    expanded_query = expand_query(query)
+    expanded_query = expand_query(query.lower())
     query_tokens = tokenize_text(expanded_query)
     query_tokens = remove_stop_words(query_tokens)
     query_tokens = query_tokens + stem_tokens(query_tokens)
+    query_tokens = list(set(query_tokens))
+
+    query_logger.info(f"Query Tokens: {query_tokens}")
 
     return query_tokens
 

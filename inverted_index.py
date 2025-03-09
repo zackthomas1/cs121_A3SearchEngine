@@ -120,6 +120,7 @@ class InvertedIndex:
         for token in query_tokens:
             if token in token_to_file_map:
                     file_list = token_to_file_map[token]
+                    # self.logger.info(f"'{token}' postings stored in files: {file_list}")
                     for file_path in file_list:
                         # Read in partial index from file
                         partial_index = self.__read_partial_index_from_disk(file_path)

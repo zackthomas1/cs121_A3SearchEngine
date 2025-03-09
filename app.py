@@ -1,8 +1,10 @@
 from flask import Flask, render_template, request
 from inverted_index import InvertedIndex
 from query import process_query, ranked_search_cosine_similarity
+from utils import get_logger
 
 app = Flask(__name__)
+app_logger = get_logger("APP")
 
 # Create and load your inverted index instance.
 # (Assume the index has been built and stored on disk previously.)
@@ -22,21 +24,13 @@ def index():
         if query:
             # Tokenize and stem the query string
             query_tokens = process_query(query)
-            
-            # Run the search function. It returns a list of (doc_id, score) tuples.
             ranked_results = ranked_search_cosine_similarity(query_tokens, index, total_docs, doc_norms, token_to_file_map)
-            
-            # Convert the doc_ids to URLs (show top 10 results)
-            for doc_id, score in ranked_results[:10]:
-                # Ensure doc_id key type matches that in the doc_id_map
+            # 
+            for doc_id, score in ranked_results:
                 url = doc_id_url_map.get(str(doc_id)) or doc_id_url_map.get(doc_id) or "Unknown URL"
                 top_results.append(url)
     
-    return render_template('index.html', top_results=top_results)
-
-# @app.route("/")
-# def hello_world():
-#     return "<p>Hello, World!</p>"
+    return render_template('index.html', top_results=top_results[:10])
 
 if __name__ == '__main__':
     app.run(debug=True)

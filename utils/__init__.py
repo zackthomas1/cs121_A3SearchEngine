@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 from nltk.corpus import stopwords
+
 #
 lemmatizer = WordNetLemmatizer()
 stemmer = PorterStemmer()
