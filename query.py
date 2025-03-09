@@ -1,19 +1,13 @@
-import math
-import time
 from numpy.linalg import norm
 from collections import defaultdict
 from inverted_index import InvertedIndex
 from nltk.corpus import wordnet as wn
-from utils import compute_tf_idf, get_logger
+from utils import compute_tf_idf, get_logger, remove_stop_words, stem_tokens, tokenize_text
 
 # constants 
 EPSILON = 0.00001
 
 query_logger = get_logger("QUERY")
-
-#TODO: Implement query token stemming
-
-#TODO: Implement stop word remove from query
 
 def expand_query(query: str, limit: int = 2) -> str: 
     """
@@ -37,7 +31,7 @@ def expand_query(query: str, limit: int = 2) -> str:
         synonyms = set()
         for syn in wn.synsets(word): 
             for lemma in syn.lemmas():
-                synonym = lemma.name().replace("_", "").lower()
+                synonym = lemma.name().replace("_", " ").lower()
                 if synonym != word:
                     synonyms.add(synonym)
 
@@ -49,6 +43,24 @@ def expand_query(query: str, limit: int = 2) -> str:
     expanded_query = " ".join(expanded_words)
     query_logger.info(f"Query Expanded to: {expanded_query}")
     return expanded_query
+
+def process_query(query: str) -> list[str]:
+    """
+    Processes a query. Transforms query string into list of query tokens
+
+    Parameters:
+        query (str): a raw query string 
+
+    Returns:
+        list[str]: processed list of query tokens
+
+    """
+    expanded_query = expand_query(query)
+    query_tokens = tokenize_text(expanded_query)
+    query_tokens = remove_stop_words(query_tokens)
+    query_tokens = query_tokens + stem_tokens(query_tokens)
+
+    return query_tokens
 
 def ranked_search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIndex, total_docs: int, precomputed_doc_norms: dict, token_to_file_map: dict) -> list:
     """

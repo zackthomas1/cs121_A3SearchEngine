@@ -1,7 +1,6 @@
 from flask import Flask, render_template, request
 from inverted_index import InvertedIndex
-from query import expand_query, ranked_search_cosine_similarity
-from utils import tokenize_text, stem_tokens
+from query import process_query, ranked_search_cosine_similarity
 
 app = Flask(__name__)
 
@@ -22,7 +21,7 @@ def index():
         query = request.form.get('query', '')
         if query:
             # Tokenize and stem the query string
-            query_tokens = tokenize_text(expand_query(query))            
+            query_tokens = process_query(query)
             
             # Run the search function. It returns a list of (doc_id, score) tuples.
             ranked_results = ranked_search_cosine_similarity(query_tokens, index, total_docs, doc_norms, token_to_file_map)

@@ -1,7 +1,6 @@
 import time
 from inverted_index import InvertedIndex
-from query import expand_query, ranked_search_cosine_similarity
-from utils import tokenize_text
+from query import process_query, ranked_search_cosine_similarity
 
 def count_tokens(index: InvertedIndex) -> int:
     """
@@ -58,7 +57,7 @@ def retrive_relevant_urls(query: str, n: int, index: InvertedIndex) -> list[str]
     doc_norms = index.load_doc_norms_from_disk()
     token_to_file_map = index.load_token_to_file_map_from_disk()
     
-    query_tokens = tokenize_text(expand_query(query))
+    query_tokens = process_query(query)
 
     # Begin timing after recieving search query
     start_time = time.perf_counter() * 1000

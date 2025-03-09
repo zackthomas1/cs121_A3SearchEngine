@@ -10,6 +10,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     index = InvertedIndex()
-    index.build_index(args.rootdir)
+    # index.build_index(args.rootdir)
     index.build_master_index()
     index.precompute_doc_norms()
