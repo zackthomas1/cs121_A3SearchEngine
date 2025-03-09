@@ -10,18 +10,18 @@ from datastructures import IndexCounter
 from pympler.asizeof import asizeof
 
 # Constants 
-PARTIAL_INDEX_SIZE_THRESHOLD_KB = 4000  # set threshold to 20000 KB (margin of error: 5000 KB)
+PARTIAL_INDEX_SIZE_THRESHOLD_KB = 6000  # set threshold to 20000 KB (margin of error: 5000 KB)
 DOC_THRESHOLD_COUNT = 125
 
-MASTER_INDEX_DIR    = "index/master_index"  # "index/master_index"
-META_DIR            = "index/meta_data"    # "index/doc_id_map"
-PARTIAL_INDEX_DIR   = "index/partial_index" # "index/partial_index"
+MASTER_INDEX_DIR        = "index/master_index"  # "index/master_index"
+META_DIR                = "index/meta_data"    # "index/doc_id_map"
+PARTIAL_INDEX_DIR       = "index/partial_index" # "index/partial_index"
+TOKEN_TO_FILE_MAP_DIR   = "index/meta_data/token_to_file_map"
 
 DOC_ID_MAP_FILE     = os.path.join(META_DIR, "doc_id_map.json")
 DOC_NORMS_FILE      = os.path.join(META_DIR, "doc_norms.json")
 MASTER_INDEX_FILE   = os.path.join(MASTER_INDEX_DIR, "master_index.json")
 META_DATA_FILE      = os.path.join(META_DIR, "meta_data.json")
-TOKEN_TO_FILE_MAP_FILE = os.path.join(META_DIR, "token_to_file_map.pkl")
 
 class InvertedIndex: 
     def __init__(self):
@@ -32,7 +32,6 @@ class InvertedIndex:
         self.alphanumerical_index: dict[str, dict[str, list[tuple[int, int, float]]]] = defaultdict(lambda: defaultdict(list)) # {letter/num: {token: [(docid, freq, tf_score)]}}
         self.alphanumerical_counts: dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
         
-        self.token_to_file_map = defaultdict(list)
         self.doc_id_map = defaultdict(str) # {doc_id: url}
         self.visited_content_simhashes = set()
 
@@ -43,9 +42,10 @@ class InvertedIndex:
         self.logger = get_logger("INVERTED_INDEX")
 
         # Initializes directories for index storage
+        os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
         os.makedirs(META_DIR, exist_ok=True) 
         os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
-        os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
+        os.makedirs(TOKEN_TO_FILE_MAP_DIR, exist_ok=True) 
 
         # Initializes directories a-z within the partial index
         for letter_ascii in range(ord('a'), ord('z') + 1):
@@ -117,7 +117,7 @@ class InvertedIndex:
         for token in query_tokens:
             if token in token_to_file_map:
                     file_list = token_to_file_map[token]
-                    self.logger.info(f"'{token}' in {len(file_list)} partial index files")
+                    # self.logger.info(f"'{token}' found in {len(file_list)} file/s")
                     for file_path in file_list:
                         # Read in partial index from file
                         partial_index = self.__read_partial_index_from_disk(file_path)
@@ -172,7 +172,14 @@ class InvertedIndex:
         Returns: 
             dict: A dictionary mapping tokens(str) to files(str)
         """
-        return read_pickle_file(TOKEN_TO_FILE_MAP_FILE, self.logger)
+        token_to_file_map = defaultdict(list)
+        for file_name in os.listdir(TOKEN_TO_FILE_MAP_DIR):
+            file_path = os.path.join(TOKEN_TO_FILE_MAP_DIR, file_name)
+            char_token_to_file_map = read_pickle_file(file_path, self.logger)
+            for token, files in char_token_to_file_map.items():
+                token_to_file_map[token] = files
+
+        return token_to_file_map
 
     def precompute_doc_norms(self) -> None:
         """
@@ -331,13 +338,19 @@ class InvertedIndex:
         index_file = os.path.join(filepath, f"index_part_{self.alphanumerical_counts[partial_index_char].indexNum}.pkl")
         write_pickle_file(index_file, self.alphanumerical_index[partial_index_char], self.logger)
             
-        def save_token_to_file_map_disk(partial_index_char: str, index_file: str) -> None: 
+        def save_token_to_file_map_disk() -> None: 
             # Update token-to-file mapping
-            for token in self.alphanumerical_index[partial_index_char]:
-                self.token_to_file_map[token].append(index_file)
-            write_pickle_file(TOKEN_TO_FILE_MAP_FILE, self.token_to_file_map, self.logger, True)
+            token_to_file_path = os.path.join(TOKEN_TO_FILE_MAP_DIR, f"token_to_file_map_{partial_index_char}.pkl")
+            
+            char_token_to_file_map = defaultdict(list)
+            if os.path.exists(token_to_file_path): 
+                char_token_to_file_map = read_pickle_file(token_to_file_path, self.logger)
 
-        save_token_to_file_map_disk(partial_index_char, index_file)
+            for token in self.alphanumerical_index[partial_index_char]:
+                char_token_to_file_map[token].append(index_file)
+            write_pickle_file(token_to_file_path, char_token_to_file_map, self.logger, True)
+
+        save_token_to_file_map_disk()
 
     def __dump_to_disk(self, alphanumerical_indexes_modified: set, override: bool = False) -> None:
         """
