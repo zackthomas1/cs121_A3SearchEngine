@@ -33,13 +33,14 @@ class InvertedIndex:
         self.alphanumerical_index: dict[str, dict[str, list[tuple[int, int, float]]]] = defaultdict(lambda: defaultdict(list)) # {letter/num: {token: [(docid, freq, tf_score)]}}
         self.alphanumerical_counts: dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
         
-        self.doc_id_map = defaultdict(str) # {doc_id: url}
-        self.doc_lengths = defaultdict()
-        self.visited_content_simhashes = set()
+        self.doc_id_map                 = defaultdict(str) # {doc_id: url}
+        self.doc_lengths                = defaultdict()
+        self.visited_content_simhashes  = set()
 
-        self.doc_id = 0
-        self.doc_count_partial_index = 0    # Rerset to zero every time a partial index is created
-        self.total_doc_indexed = 0  # Tracks the number of documents successfully processed/indexed (not skipped).
+        self.doc_id                     = 0
+        self.doc_count_partial_index    = 0 # Rerset to zero every time a partial index is created
+        self.total_doc_indexed          = 0 # Tracks the number of documents successfully processed/indexed (not skipped).
+        self.doc_lengths_sum            = 0
 
         self.logger = get_logger("INVERTED_INDEX")
 
@@ -226,7 +227,7 @@ class InvertedIndex:
                 partial_index = self.__read_partial_index_from_disk(file_path)
                 for token, postings in partial_index.items():
                     df = global_df[token]
-                    for doc_id, freq, tf in postings: 
+                    for doc_id, freq, tf, structural_weight in postings: 
                         weight = compute_tf_idf(tf, df, total_docs)
                         doc_norms[doc_id] += weight ** 2
 
@@ -270,7 +271,9 @@ class InvertedIndex:
             return
 
         # Extract tokens from html content
-        tokens = self.__extract_tokens_with_weighting(content)
+        # tokens = self.__extract_tokens(content)
+        tokens_with_freq_and_weight = self.__extract_content_structure(content)
+        tokens = tokens_with_freq_and_weight.keys()
 
         # Check for near and exact duplicate content (Simhash); Simhash also covers exact duplicate which has dist == 0
         current_page_hash = simhash.compute_simhash(tokens)
@@ -288,19 +291,18 @@ class InvertedIndex:
         self.__update_doc_id_map(doc_id, url)
         self.__update_doc_lengths(doc_id, len(tokens))
 
-        # Tokenize text
-        token_freq = InvertedIndex.__construct_token_freq_counter(tokens)
+        # Extract structure of content and tokens
 
         # Update the inverted index with document tokens
         alphanumerical_indexes_modified = set() # Track which partial indexes are being updated this document
-        for token, freq in token_freq.items():
+        for token, (freq, structural_weight) in tokens_with_freq_and_weight.items():
             tf = InvertedIndex.__compute_tf(freq, len(tokens))
 
             # Append token to alphanumerical_index
             # Only process tokens that are alphanumerical
             if (token[0].lower().isalnum() and token[0].lower().isascii()):
                 first_char = token[0].lower()
-                self.alphanumerical_index[first_char][token].append((doc_id, freq, tf))
+                self.alphanumerical_index[first_char][token].append((doc_id, freq, tf, structural_weight))
 
                 # Track # of documents counted per alphanumerical character
                 alphanumerical_indexes_modified.add(first_char)
@@ -325,15 +327,15 @@ class InvertedIndex:
         """
         
         """
-        
+        self.doc_lengths_sum += doc_length
         self.doc_lengths[doc_id] = doc_length
 
     def __save_meta_data_to_disk(self) -> None: 
         """
         Saves meta data about the inverted index to disk to be read back when preforming query
         """
-        total_length = sum(self.doc_lengths.values())
-        num_docs = len(self.doc_lengths)
+        total_length = self.doc_lengths_sum
+        num_docs = self.total_doc_indexed
         doc_length_avg = total_length / num_docs if num_docs > 0 else 0.0
 
         meta_data = {
@@ -418,7 +420,70 @@ class InvertedIndex:
 
         gc.collect()
 
-    def __extract_tokens_with_weighting(self, content: str, weigh_factor: int = 2) -> list[str]: 
+    def __extract_content_structure(self, content: str, weigh_factor: int = 2) -> dict[int, tuple[int,float]]: 
+        """
+        Extract tokens from HTML content and applies extra wieght to tokens that 
+        appear in important HTML tags (titles, h1, h2, h3, and strong). 
+
+        Parameters:
+            text (str): html content
+            weight_factor (int): how much importance to assign tags
+
+        Returns:
+            dict[int, tuple[int,float]]: A combined list of tokens. Toeksn from important sections are replicated 
+        """
+
+        try:
+            # Get the text from the html response
+            soup = BeautifulSoup(content, 'html.parser')
+
+            # Remove the text of CSS, JS, metadata, alter for JS, embeded websites
+            for tag in soup.find_all(["style", "script", "meta", "noscript", "iframe"]):  
+                tag.decompose()  # remove all markups stated above
+            
+            # soup contains only human-readable texts now to be compared near-duplicate
+            general_text = soup.get_text(separator=" ", strip=True)
+            general_tokens = tokenize_text(general_text)
+
+            token_counts = defaultdict(int)
+            structural_weights = defaultdict(lambda: 1.0)
+
+            # Count all tokens in the main body.
+            for token in general_tokens:
+                token_counts[token] += 1
+
+            # Increase weight for tokens in the title.
+            if soup.title:
+                title_text = soup.title.get_text()
+                title_tokens = tokenize_text(title_text)
+                for token in title_tokens:
+                    structural_weights[token] += 1.0  # bonus for title
+
+            # Increase weight for tokens in header tags.
+            for header in soup.find_all(['h1', 'h2', 'h3']):
+                header_text = header.get_text()
+                header_tokens = tokenize_text(header_text)
+                for token in header_tokens:
+                    structural_weights[token] += 0.75  # bonus for headers
+            
+            # Increase weight for tokens in bold text.
+            for bold in soup.find_all(['b', 'strong']):
+                bold_text = bold.get_text()
+                bold_tokens = tokenize_text(bold_text)
+                for token in bold_tokens:
+                    structural_weights[token] += 0.5  # bonus for bold text
+
+            # Combine counts and structural weights.
+            tokens_structural_weights = {}
+            for token in token_counts:
+                tokens_structural_weights[token] = (token_counts[token], structural_weights[token])
+            
+            return tokens_structural_weights
+        except Exception as e:
+            self.logger.error(f"An unexpected error has orccurred: {e}") 
+            return None
+
+    def __extract_tokens(self, content: str, weigh_factor: int = 2) -> list[str]: 
         """
         Extract toekns from HTML content and applies extra wieght to tokens that 
         appear in important HTML tags (titles, h1, h2, h3, and strong). 
@@ -443,25 +508,10 @@ class InvertedIndex:
             general_text = soup.get_text(separator=" ", strip=True)
             general_tokens = tokenize_text(general_text)
 
-            # Extract important text from specific tags and tokenize 
-            important_tags = ["title", "h1", "h2", "h3", "strong"]
-            important_text = ""
-            for tag in important_tags: 
-                for element in soup.find_all(tag): 
-                    important_text += " " + element.get_text(separator=" ", strip=True)
-
-            important_tokens = tokenize_text(important_text)
-
-            # Weight important tokens by replicating them
-            # Tokens from the important sections are multiplied by a weight factor. 
-            # This effectively increases their frequency count.
-            
-            weighted_tokens = general_tokens + (important_tokens * weigh_factor)
-
-            return weighted_tokens
+            return general_tokens
         except Exception as e:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
-            return None
+            return []
     
     def __read_partial_index_from_disk(self, file_path: str) -> dict:
         """
@@ -481,20 +531,3 @@ class InvertedIndex:
     @staticmethod
     def __compute_tf(term_freq: int, doc_length: int)->int: 
         return term_freq / doc_length
-    
-    @staticmethod
-    def __construct_token_freq_counter(tokens: list[str]) -> Counter:
-        """
-        Counts the apparence frequency a token in a list of tokens from a single document
-        
-        Parameters:
-            tokens (list[str]): A list of tokens from a single document
-
-        Returns:
-            Counter: A list of tuple pairs the token string and an integer of the frequency of token in tokens list
-        """
-        
-        counter = Counter()
-        counter.update(tokens)
-        return counter
-    
