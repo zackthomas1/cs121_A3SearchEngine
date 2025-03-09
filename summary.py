@@ -87,25 +87,29 @@ if __name__ == "__main__":
 
     # m2 report
     # ---------------------------
-    # N_RESULTS = 5
-    # queries = ["cristina lopes",
-    #            "machine learning",
-    #            "ACM",
-    #            "master of software engineering"]
+    N_RESULTS = 5
+    queries = ["cristina lopes",
+               "machine learning",
+               "ACM",
+               "master of software engineering"]
     
-    # print(f"Top {N_RESULTS} Query Results:")
-    # for query in queries:
-    #     print(f"\tQuery: {query}")
-    #     top_query_results = retrive_relevant_urls(query, N_RESULTS, index)
-    #     for ranked_pos, url in enumerate(top_query_results, start=1):
-    #         print(f"\t {ranked_pos}. {url}")
+    print(f"Top {N_RESULTS} Query Results:")
+    for query in queries:
+        print(f"\tQuery: {query}")
+        top_query_results = retrive_relevant_urls(query, N_RESULTS, index)
+        for ranked_pos, url in enumerate(top_query_results, start=1):
+            print(f"\t {ranked_pos}. {url}")
 
     # m3 report
     # ---------------------------
 
     N_RESULTS = 5
     queries = [
-        "Undergraduate Research Opportunities Program (UROP) at UCI"
+        "uci graphics",
+        "graduate learning",
+        "software engineering technology",
+        "algorithm and data structure",
+        "Women in Computer Science"
     ]
     
     print(f"Top {N_RESULTS} Query Results:")

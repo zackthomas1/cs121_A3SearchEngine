@@ -103,7 +103,7 @@ def write_pickle_file(file_path: str, data: dict, logger: Logger, overwrite: boo
     try: 
         with open(file_path, "wb") as f:
             pickle.dump(data, f)
-            logger.info(f"Partial index saved to {file_path}")
+            logger.info(f"Successful data write to pickle file: {file_path}")
     except Exception as e:
         logger.error(f"Unable to save partial index to disk: {file_path} - {e}")
 
@@ -143,7 +143,7 @@ def write_json_file(file_path: str, data: dict, logger: Logger, overwrite: bool 
         if not overwrite:
             # Check if there is already data save in the file
             if os.path.exists(file_path):
-                logger.warning(f"Existing json file found data may be overwritten: {file_path}")
+                logger.warning(f"Overwrite enabled and existing json file found: {file_path}")
                 with open(file_path, "r", encoding="utf-8") as f: 
                     new_data = json.load(f)
 

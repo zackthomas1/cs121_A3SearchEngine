@@ -10,7 +10,7 @@ from datastructures import IndexCounter
 from pympler.asizeof import asizeof
 
 # Constants 
-PARTIAL_INDEX_SIZE_THRESHOLD_KB = 2000  # set threshold to 20000 KB (margin of error: 5000 KB)
+PARTIAL_INDEX_SIZE_THRESHOLD_KB = 4000  # set threshold to 20000 KB (margin of error: 5000 KB)
 DOC_THRESHOLD_COUNT = 125
 
 MASTER_INDEX_DIR    = "index/master_index"  # "index/master_index"
@@ -21,7 +21,7 @@ DOC_ID_MAP_FILE     = os.path.join(META_DIR, "doc_id_map.json")
 DOC_NORMS_FILE      = os.path.join(META_DIR, "doc_norms.json")
 MASTER_INDEX_FILE   = os.path.join(MASTER_INDEX_DIR, "master_index.json")
 META_DATA_FILE      = os.path.join(META_DIR, "meta_data.json")
-TOKEN_TO_FILE_MAP_FILE = os.path.join(META_DIR, "token_to_file_map.json")
+TOKEN_TO_FILE_MAP_FILE = os.path.join(META_DIR, "token_to_file_map.pkl")
 
 class InvertedIndex: 
     def __init__(self):
@@ -117,7 +117,7 @@ class InvertedIndex:
         for token in query_tokens:
             if token in token_to_file_map:
                     file_list = token_to_file_map[token]
-                    # self.logger.info(f"'{token}' postings stored in files: {file_list}")
+                    self.logger.info(f"'{token}' in {len(file_list)} partial index files")
                     for file_path in file_list:
                         # Read in partial index from file
                         partial_index = self.__read_partial_index_from_disk(file_path)
@@ -168,11 +168,11 @@ class InvertedIndex:
     
     def load_token_to_file_map_from_disk(self) -> dict:
         """
-        Load index meta file from disk
+        Load token to file map from disk
         Returns: 
             dict: A dictionary mapping tokens(str) to files(str)
         """
-        return read_json_file(TOKEN_TO_FILE_MAP_FILE, self.logger)
+        return read_pickle_file(TOKEN_TO_FILE_MAP_FILE, self.logger)
 
     def precompute_doc_norms(self) -> None:
         """
@@ -335,7 +335,7 @@ class InvertedIndex:
             # Update token-to-file mapping
             for token in self.alphanumerical_index[partial_index_char]:
                 self.token_to_file_map[token].append(index_file)
-            write_json_file(TOKEN_TO_FILE_MAP_FILE, self.token_to_file_map, self.logger, True)
+            write_pickle_file(TOKEN_TO_FILE_MAP_FILE, self.token_to_file_map, self.logger, True)
 
         save_token_to_file_map_disk(partial_index_char, index_file)
 
