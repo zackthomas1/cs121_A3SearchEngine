@@ -15,6 +15,7 @@ doc_id_url_map      = inverted_index.load_doc_id_map_from_disk()
 doc_lengths         = inverted_index.load_doc_lengths_from_disk()
 doc_norms           = inverted_index.load_doc_norms_from_disk()
 token_to_file_map   = inverted_index.load_token_to_file_map_from_disk()
+page_rank_scores    = inverted_index.load_page_rank_from_disk()
 
 avg_doc_length      = inverted_index.load_meta_data_from_disk()["avg_doc_length"]
 total_docs          = inverted_index.load_meta_data_from_disk()["total_doc_indexed"]
