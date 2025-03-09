@@ -21,6 +21,11 @@ def compute_simhash(tokens: list[str], hashbits: int = 128) -> int:
     # Convert all {token: freq} to {token: hash_value}  # hash value is token in binary (O(n) where n is number of unique tokens)
     token_hashed: dict[str, int] = convertToHash(token_freq_table)
 
+    # Precompute the binary representation for each token's hash,
+    # padded to the specified number of bits.
+    token_binary = {tok: bin(hsh)[2:].zfill(hashbits) for tok, hsh in token_hashed.items()}
+
+
     # Vector formed by summing weights
     summed_weights: list[int] = [0] * hashbits  # ith index is ith bit of vector of summing weights
 
@@ -28,7 +33,7 @@ def compute_simhash(tokens: list[str], hashbits: int = 128) -> int:
     for index in range(len(summed_weights)):
         for tok, hsh in token_hashed.items():
             weight = token_freq_table[tok]  # weight = freq of token
-            if bin(hsh)[2:].zfill(128)[index] == '0':  # pad upper bits to 0
+            if token_binary[tok][index] == '0':
                 summed_weights[index] -= weight
             else:  # if bit is 1
                 summed_weights[index] += weight
