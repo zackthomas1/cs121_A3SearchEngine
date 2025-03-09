@@ -58,9 +58,8 @@ def process_query(query: str) -> list[str]:
     # expanded_query = expand_query(query.lower())
     query_tokens = tokenize_text(query)
     query_tokens = remove_stop_words(query_tokens)
-    # query_tokens = query_tokens + stem_tokens(query_tokens)
-    # query_tokens = stem_tokens(query_tokens)
-    query_tokens = list(set(query_tokens))
+    query_tokens = stem_tokens(query_tokens)
+    # query_tokens = list(set(query_tokens))
 
     query_logger.info(f"Query Tokens: {query_tokens}")
 

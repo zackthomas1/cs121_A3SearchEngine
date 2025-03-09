@@ -30,7 +30,7 @@ class InvertedIndex:
         Prepares to Index data by initializing storage directories and counter/keying variables.
         """
         # Note, modify the Tuple[] in the case you want to add more attributes to the posting
-        self.alphanumerical_index: dict[str, dict[str, list[tuple[int, int, float]]]] = defaultdict(lambda: defaultdict(list)) # {letter/num: {token: [(docid, freq, tf_score)]}}
+        self.alphanumerical_index: dict[str, dict[str, list[tuple[int, int, float, float]]]] = defaultdict(lambda: defaultdict(list)) # {letter/num: {token: [(docid, freq, tf_score, structural_weight)]}}
         self.alphanumerical_counts: dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
         
         self.doc_id_map                 = defaultdict(str) # {doc_id: url}
@@ -526,7 +526,7 @@ class InvertedIndex:
             file_path (str): A file path to a partial index serialized in a .txt file 
 
         Returns:
-            dict[str, list[tuple[int, int, float]]]:
+            dict:
 
         """
         return read_pickle_file(file_path, self.logger)
