@@ -5,12 +5,12 @@ import simhash
 import pickle
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
-from utils import clean_url, compute_tf_idf, get_logger, read_pickle_file, write_pickle_file, read_json_file, write_json_file, tokenize_text, is_non_html_extension, is_xml
+from utils import clean_url, compute_tf_idf, get_logger, read_pickle_file, write_pickle_file, read_json_file, write_json_file, tokenize_text, stem_tokens, is_non_html_extension, is_xml
 from datastructures import IndexCounter
 from pympler.asizeof import asizeof
 
 # Constants 
-PARTIAL_INDEX_SIZE_THRESHOLD_KB = 9000  # set threshold to 20000 KB (margin of error: 5000 KB)
+PARTIAL_INDEX_SIZE_THRESHOLD_KB = 14000  # set threshold to 20000 KB (margin of error: 5000 KB)
 DOC_THRESHOLD_COUNT = 125
 
 MASTER_INDEX_DIR        = "index/master_index"  # "index/master_index"
@@ -444,6 +444,7 @@ class InvertedIndex:
             # soup contains only human-readable texts now to be compared near-duplicate
             general_text = soup.get_text(separator=" ", strip=True)
             general_tokens = tokenize_text(general_text)
+            general_tokens = stem_tokens(general_tokens)  # Apply stemming
 
             token_counts = defaultdict(int)
             structural_weights = defaultdict(lambda: 1.0)
@@ -529,5 +530,5 @@ class InvertedIndex:
 
     # Non-member functions
     @staticmethod
-    def __compute_tf(term_freq: int, doc_length: int)->int: 
+    def __compute_tf(term_freq: int, doc_length: int)->float: 
         return term_freq / doc_length
