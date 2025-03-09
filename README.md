@@ -100,6 +100,9 @@ optional arguments:
 --rootdir <file_path> : File path to document corpus directory
 
 ### Running Search Engine and Entering a Query
-$ ```python build_index.py --rootdir <file_path>```
+$ ```python -m flask run```
+
+Visit site
+http://127.0.0.1:5000
 
 

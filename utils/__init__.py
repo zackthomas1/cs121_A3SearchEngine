@@ -1,9 +1,12 @@
 import re
 import os
 import math
+import time
 import json
+import pickle
 import logging
 from logging import Logger
+from collections import defaultdict
 from urllib.parse import urlparse
 from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer, WordNetLemmatizer
@@ -68,6 +71,43 @@ def get_logger(name, filename=None):
     logger.addHandler(ch)
     return logger
 
+def read_pickle_file(file_path: str, logger: Logger) -> dict:
+    """
+    Parameters:
+        file_path (str): File path to json document in local file storage
+        logger (Logger):
+    Returns:
+        dict: returns the data stored in the json file as a python dictionary
+    """
+    
+    data = defaultdict()
+
+    try:
+        with open(file_path, "rb") as f:
+            data = pickle.load(f)
+    except Exception as e:
+        logger.error(f"Unable to read .txt file: {e}")
+    
+    return data
+
+def write_pickle_file(file_path: str, data: dict, logger: Logger, overwrite: bool = False) -> None:
+    """
+    Parameters:
+        file_path (str): File path to json document in local file storage
+        data (dict)
+        logger (Logger):
+        overwrite (bool):
+    Returns:
+        dict: returns the data stored in the json file as a python dictionary
+    """
+
+    try: 
+        with open(file_path, "wb") as f:
+            pickle.dump(data, f)
+            logger.info(f"Successful data write to pickle file: {file_path}")
+    except Exception as e:
+        logger.error(f"Unable to save partial index to disk: {file_path} - {e}")
+
 def read_json_file(file_path: str, logger: Logger) -> dict:
     """
     Parameters:
@@ -91,19 +131,22 @@ def read_json_file(file_path: str, logger: Logger) -> dict:
         logger.error(f"An unexpected error has orccurred: {file_path} - {e}") 
         return None
 
-def write_json_file(file_path: str, data: dict, logger: Logger) -> None:
+def write_json_file(file_path: str, data: dict, logger: Logger, overwrite: bool = False) -> None:
     """
     Parameters:
         file_path (str): File path to json document in local file storage
+        data (dict)
         logger (Logger):
+        overwrite (bool):
     """
     try:
         new_data = {}
-        # Check if there is already data save in the file
-        if os.path.exists(file_path):
-            logger.warning(f"Existing data in json file: {file_path}")
-            with open(file_path, "r", encoding="utf-8") as f: 
-                new_data = json.load(f)
+        if not overwrite:
+            # Check if there is already data save in the file
+            if os.path.exists(file_path):
+                logger.warning(f"Existing json file found. Operation may caause data lose: {file_path}")
+                with open(file_path, "r", encoding="utf-8") as f: 
+                    new_data = json.load(f)
 
         # Combine existing and new data
         for key, value in data.items(): 

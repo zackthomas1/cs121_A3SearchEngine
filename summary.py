@@ -51,12 +51,14 @@ def retrive_relevant_urls(query: str, n: int, index: InvertedIndex) -> list[str]
     
     {'ahm': [[111, 1], [238, 2], [499, 1], [4360, 1], [5006, 4], [592, 3], [686, 1], [744, 1], [745, 1], [5013, 2], [5030, 2], [5035, 2], [5038, 2], [5047, 6], [5051, 2], [5095, 2], [5118, 2], [5138, 2], [835, 1], [1110, 1], [1133, 1]]}
     """
-    total_docs = index.load_meta_data_from_disk()["total_doc_indexed"]
-    
-    doc_id_url_map = index.load_doc_id_map_from_disk()
-    doc_norms = index.load_doc_norms_from_disk()
-    token_to_file_map = index.load_token_to_file_map_from_disk()
-    
+    doc_id_url_map      = index.load_doc_id_map_from_disk()
+    # doc_lengths         = index.load_doc_lengths_from_disk()
+    doc_norms           = index.load_doc_norms_from_disk()
+    token_to_file_map   = index.load_token_to_file_map_from_disk()
+
+    # avg_doc_length          = index.load_meta_data_from_disk()["aag_doc_length"]
+    total_docs          = index.load_meta_data_from_disk()["total_doc_indexed"]    
+
     query_tokens = process_query(query)
 
     # Begin timing after recieving search query
@@ -87,25 +89,29 @@ if __name__ == "__main__":
 
     # m2 report
     # ---------------------------
-    # N_RESULTS = 5
-    # queries = ["cristina lopes",
-    #            "machine learning",
-    #            "ACM",
-    #            "master of software engineering"]
+    N_RESULTS = 5
+    queries = ["cristina lopes",
+               "machine learning",
+               "ACM",
+               "master of software engineering"]
     
-    # print(f"Top {N_RESULTS} Query Results:")
-    # for query in queries:
-    #     print(f"\tQuery: {query}")
-    #     top_query_results = retrive_relevant_urls(query, N_RESULTS, index)
-    #     for ranked_pos, url in enumerate(top_query_results, start=1):
-    #         print(f"\t {ranked_pos}. {url}")
+    print(f"Top {N_RESULTS} Query Results:")
+    for query in queries:
+        print(f"\tQuery: {query}")
+        top_query_results = retrive_relevant_urls(query, N_RESULTS, index)
+        for ranked_pos, url in enumerate(top_query_results, start=1):
+            print(f"\t {ranked_pos}. {url}")
 
     # m3 report
     # ---------------------------
 
     N_RESULTS = 5
     queries = [
-        "Undergraduate Research Opportunities Program (UROP) at UCI"
+        "uci graphics",
+        "graduate learning",
+        "software engineering technology",
+        "algorithm and data structure",
+        "Women in Computer Science"
     ]
     
     print(f"Top {N_RESULTS} Query Results:")

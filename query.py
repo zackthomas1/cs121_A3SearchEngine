@@ -1,3 +1,4 @@
+import math
 from numpy.linalg import norm
 from collections import defaultdict
 from inverted_index import InvertedIndex
@@ -101,12 +102,14 @@ def ranked_search_cosine_similarity(query_tokens: list[str], inverted_index: Inv
 
     # Compute dot product between query and document vectors
     for token, query_weight in query_weight_vector.items():
-        if token in merged_index:
-            postings = merged_index[token]
-            for doc_id, freq, tf in postings:
-                df = len(postings)
-                doc_token_weight = compute_tf_idf(tf, df, total_docs)
-                scores[doc_id] += query_weight * doc_token_weight
+        if token not in merged_index:
+            continue
+
+        postings = merged_index[token]
+        for doc_id, freq, tf in postings:
+            df = len(postings)
+            doc_token_weight = compute_tf_idf(tf, df, total_docs)
+            scores[doc_id] += query_weight * doc_token_weight
 
     # Normalize scores to obtain cosine similarity
     # Cosine Similarity (A, B) = (A · B) / (||A|| * ||B||)
@@ -118,4 +121,60 @@ def ranked_search_cosine_similarity(query_tokens: list[str], inverted_index: Inv
             scores[doc_id] = 0.0
 
     # Sort the merged results by their cosine similarity (quality), tie-break with doc_id
+    return sorted(scores.items(), key=lambda item: (-item[1], item[0]))
+
+def ranked_search_bm25(query_tokens: list[str], inverted_index: InvertedIndex, total_docs: int, avg_doc_length: float, doc_lengths: dict, token_to_file_map: dict): 
+    """
+    Ranks documents using BM25 with dynamic structural weighting.
+    
+    Each token's posting is expected to be a tuple. The tuple should be in the form:
+      (doc_id, frequency, tf, structural_weight)
+    If the structural_weight is not present, a default value of 1.0 is assumed.
+    
+    Parameters:
+        query_tokens (list[str]): List of query tokens.
+        inverted_index: An instance of your InvertedIndex class.
+        total_docs (int): Total number of documents in the corpus.
+        avg_doc_length (float): The average document length (number of tokens).
+        doc_lengths (dict): Mapping from document id to its length.
+        token_to_file_map (dict): Mapping needed to load postings for tokens.
+        
+    Returns:
+        list[int, float]: tuples (doc_id, score), sorted by descending BM25 score.
+    """
+    # BM25 hyperparameters
+    k1 = 1.5
+    B = 0.75
+
+    merged_index = inverted_index.construct_merged_index_from_disk(query_tokens, token_to_file_map)
+    scores = defaultdict(float)
+
+    for token in query_tokens:
+        if token not in merged_index:
+            continue
+
+        postings = merged_index[token]
+        df = len(postings)
+
+        # Compute inverse document frequency (idf) with smoothing.
+        idf = math.log((total_docs - df + 0.5) / (df + 0.5) + 1)
+
+        for posting in postings:
+            doc_id = posting[0]
+            freq = posting[1]
+
+            # If available, use the dynamic structural weight; else default to 1.0.
+            structural_weight = posting[3] if len(posting) > 3 else 1.0
+
+            # Effective frequency after applying structural weight.
+            effective_freq = freq * structural_weight
+
+            # Retrieve the document length; default to average if not available.
+            doc_length = doc_lengths.get(doc_id, avg_doc_length)
+
+            # BM25 scoring formula:
+            score = idf * (effective_freq * (k1 + 1)) / (effective_freq + k1 * (1 - B + B * (doc_length / avg_doc_length) ))
+            scores[doc_id] += score
+
+    # Return documents sorted by descending BM25 score, tie-breaking on doc_id.
     return sorted(scores.items(), key=lambda item: (-item[1], item[0]))

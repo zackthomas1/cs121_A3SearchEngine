@@ -1,30 +1,28 @@
 import os
 import gc
-import time
 import math
-import json
 import simhash
 import pickle
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
-from utils import clean_url, compute_tf_idf, get_logger, read_json_file, write_json_file, tokenize_text, is_non_html_extension, is_xml
+from utils import clean_url, compute_tf_idf, get_logger, read_pickle_file, write_pickle_file, read_json_file, write_json_file, tokenize_text, is_non_html_extension, is_xml
 from datastructures import IndexCounter
 from pympler.asizeof import asizeof
 
 # Constants 
-PARTIAL_INDEX_SIZE_THRESHOLD_KB = 2000  # set threshold to 20000 KB (margin of error: 5000 KB)
+PARTIAL_INDEX_SIZE_THRESHOLD_KB = 9000  # set threshold to 20000 KB (margin of error: 5000 KB)
 DOC_THRESHOLD_COUNT = 125
 
-
-MASTER_INDEX_DIR    = "index/master_index"  # "index/master_index"
-META_DIR            = "index/meta_data"    # "index/doc_id_map"
-PARTIAL_INDEX_DIR   = "index/partial_index" # "index/partial_index"
+MASTER_INDEX_DIR        = "index/master_index"  # "index/master_index"
+META_DIR                = "index/meta_data"    # "index/doc_id_map"
+PARTIAL_INDEX_DIR       = "index/partial_index" # "index/partial_index"
+TOKEN_TO_FILE_MAP_DIR   = "index/meta_data/token_to_file_map"
 
 DOC_ID_MAP_FILE     = os.path.join(META_DIR, "doc_id_map.json")
+DOC_LENGTH_FILE     = os.path.join(META_DIR, "doc_length.json")
 DOC_NORMS_FILE      = os.path.join(META_DIR, "doc_norms.json")
 MASTER_INDEX_FILE   = os.path.join(MASTER_INDEX_DIR, "master_index.json")
 META_DATA_FILE      = os.path.join(META_DIR, "meta_data.json")
-TOKEN_TO_FILE_MAP_FILE = os.path.join(META_DIR, "token_to_file_map.json")
 
 class InvertedIndex: 
     def __init__(self):
@@ -35,8 +33,8 @@ class InvertedIndex:
         self.alphanumerical_index: dict[str, dict[str, list[tuple[int, int, float]]]] = defaultdict(lambda: defaultdict(list)) # {letter/num: {token: [(docid, freq, tf_score)]}}
         self.alphanumerical_counts: dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
         
-        self.token_to_file_map = defaultdict(list)
         self.doc_id_map = defaultdict(str) # {doc_id: url}
+        self.doc_lengths = defaultdict()
         self.visited_content_simhashes = set()
 
         self.doc_id = 0
@@ -46,9 +44,10 @@ class InvertedIndex:
         self.logger = get_logger("INVERTED_INDEX")
 
         # Initializes directories for index storage
+        os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
         os.makedirs(META_DIR, exist_ok=True) 
         os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
-        os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
+        os.makedirs(TOKEN_TO_FILE_MAP_DIR, exist_ok=True) 
 
         # Initializes directories a-z within the partial index
         for letter_ascii in range(ord('a'), ord('z') + 1):
@@ -120,7 +119,7 @@ class InvertedIndex:
         for token in query_tokens:
             if token in token_to_file_map:
                     file_list = token_to_file_map[token]
-                    # self.logger.info(f"'{token}' postings stored in files: {file_list}")
+                    self.logger.info(f"'{token}' found in {len(file_list)} file/s")
                     for file_path in file_list:
                         # Read in partial index from file
                         partial_index = self.__read_partial_index_from_disk(file_path)
@@ -142,6 +141,14 @@ class InvertedIndex:
         """
         return read_json_file(DOC_ID_MAP_FILE, self.logger)
     
+    def load_doc_lengths_from_disk(self) -> dict:
+        """
+        Load the doc length map from disk
+        Returns: 
+            dict: A dictionary mapping doc id numbers to length of the document
+        """
+        return read_json_file(DOC_LENGTH_FILE, self.logger)
+
     def load_doc_norms_from_disk(self) -> dict:
         """
         Loads the precomputed document norms from disk.
@@ -171,11 +178,18 @@ class InvertedIndex:
     
     def load_token_to_file_map_from_disk(self) -> dict:
         """
-        Load index meta file from disk
+        Load token to file map from disk
         Returns: 
             dict: A dictionary mapping tokens(str) to files(str)
         """
-        return read_json_file(TOKEN_TO_FILE_MAP_FILE, self.logger)
+        token_to_file_map = defaultdict(list)
+        for file_name in os.listdir(TOKEN_TO_FILE_MAP_DIR):
+            file_path = os.path.join(TOKEN_TO_FILE_MAP_DIR, file_name)
+            char_token_to_file_map = read_pickle_file(file_path, self.logger)
+            for token, files in char_token_to_file_map.items():
+                token_to_file_map[token] = files
+
+        return token_to_file_map
 
     def precompute_doc_norms(self) -> None:
         """
@@ -272,6 +286,7 @@ class InvertedIndex:
 
         # Update doc id map
         self.__update_doc_id_map(doc_id, url)
+        self.__update_doc_lengths(doc_id, len(tokens))
 
         # Tokenize text
         token_freq = InvertedIndex.__construct_token_freq_counter(tokens)
@@ -306,14 +321,25 @@ class InvertedIndex:
 
         self.doc_id_map[doc_id] = url
 
+    def __update_doc_lengths(self, doc_id: int, doc_length: int) -> None: 
+        """
+        
+        """
+        
+        self.doc_lengths[doc_id] = doc_length
+
     def __save_meta_data_to_disk(self) -> None: 
         """
         Saves meta data about the inverted index to disk to be read back when preforming query
         """
+        total_length = sum(self.doc_lengths.values())
+        num_docs = len(self.doc_lengths)
+        doc_length_avg = total_length / num_docs if num_docs > 0 else 0.0
 
         meta_data = {
+            "avg_doc_length": doc_length_avg,
             "corpus_size" : self.doc_id,
-            "total_doc_indexed": self.total_doc_indexed
+            "total_doc_indexed": self.total_doc_indexed,
         }
         write_json_file(META_DATA_FILE, meta_data, self.logger)
 
@@ -323,30 +349,36 @@ class InvertedIndex:
         """
         write_json_file(DOC_ID_MAP_FILE, self.doc_id_map, self.logger)
 
+    def __save_doc_lengths_to_disk(self) -> None: 
+        """
+        Saves the Doc_ID-URL mapping to disk as a JSON file
+        """
+        write_json_file(DOC_LENGTH_FILE, self.doc_lengths, self.logger)
+
     def __save_index_to_disk(self, partial_index_char: str) -> None: 
         """
-        Store the current in-memory partial index to a .txt file.
-        Each line in the file is formatted as:
-        token;doc_id1,freq1,tf1 doc_id2,freq2,tf2 ...
+        Store the current in-memory partial index to a .pkl file
         """
         self.logger.info(f"Saving '{partial_index_char}' index to disk...")
         
         # Create a new .txt partial index file
         filepath = PARTIAL_INDEX_DIR + '/' + partial_index_char
         index_file = os.path.join(filepath, f"index_part_{self.alphanumerical_counts[partial_index_char].indexNum}.pkl")
-        try: 
-            with open(index_file, "wb") as f:
-                pickle.dump(self.alphanumerical_index[partial_index_char], f)
-                self.logger.info(f"Partial index saved to {index_file}")
+        write_pickle_file(index_file, self.alphanumerical_index[partial_index_char], self.logger)
             
+        def save_token_to_file_map_disk() -> None: 
             # Update token-to-file mapping
-            for token in self.alphanumerical_index[partial_index_char]:
-                self.token_to_file_map[token].append(index_file)
-            write_json_file(TOKEN_TO_FILE_MAP_FILE, self.token_to_file_map, self.logger)
-            self.token_to_file_map.clear()
+            token_to_file_path = os.path.join(TOKEN_TO_FILE_MAP_DIR, f"token_to_file_map_{partial_index_char}.pkl")
+            
+            char_token_to_file_map = defaultdict(list)
+            if os.path.exists(token_to_file_path): 
+                char_token_to_file_map = read_pickle_file(token_to_file_path, self.logger)
 
-        except Exception as e:
-            self.logger.error(f"Unable to save partial index to disk: {index_file} - {e}")
+            for token in self.alphanumerical_index[partial_index_char]:
+                char_token_to_file_map[token].append(index_file)
+            write_pickle_file(token_to_file_path, char_token_to_file_map, self.logger, True)
+
+        save_token_to_file_map_disk()
 
     def __dump_to_disk(self, alphanumerical_indexes_modified: set, override: bool = False) -> None:
         """
@@ -381,6 +413,8 @@ class InvertedIndex:
             # Update the doc_id map if index on disk is updated
             self.__save_doc_id_map_to_disk()
             self.doc_id_map.clear()
+            self.__save_doc_lengths_to_disk()
+            self.doc_lengths.clear()
 
         gc.collect()
 
@@ -441,14 +475,7 @@ class InvertedIndex:
             dict[str, list[tuple[int, int, float]]]:
 
         """
-        partial_index = defaultdict(list)
-        try:
-            with open(file_path, "rb") as f:
-                partial_index = pickle.load(f)
-        except Exception as e:
-            self.logger.error(f"Unable to read .txt file: {e}")
-
-        return partial_index
+        return read_pickle_file(file_path, self.logger)
 
     # Non-member functions
     @staticmethod
