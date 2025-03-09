@@ -147,9 +147,9 @@ def write_json_file(file_path: str, data: dict, logger: Logger, overwrite: bool 
                 with open(file_path, "r", encoding="utf-8") as f: 
                     new_data = json.load(f)
 
-            # Combine existing and new data
-                for key, value in data.items(): 
-                    new_data[key] = value
+        # Combine existing and new data
+        for key, value in data.items(): 
+            new_data[key] = value
 
         # write data to file
         with open(file_path, "w", encoding="utf-8") as f:
