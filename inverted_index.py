@@ -487,36 +487,6 @@ class InvertedIndex:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
             return None
 
-    def __extract_tokens(self, content: str, weigh_factor: int = 2) -> list[str]: 
-        """
-        Extract toekns from HTML content and applies extra wieght to tokens that 
-        appear in important HTML tags (titles, h1, h2, h3, and strong). 
-
-        Parameters:
-            text (str): html content
-            weight_factor (int): how much importance to assign tags
-
-        Returns:
-            list[str]: A combined list of tokens. Toeksn from important sections are replicated 
-        """
-
-        try:
-            # Get the text from the html response
-            soup = BeautifulSoup(content, 'html.parser')
-
-            # Remove the text of CSS, JS, metadata, alter for JS, embeded websites
-            for tag in soup.find_all(["style", "script", "meta", "noscript", "iframe"]):  
-                tag.decompose()  # remove all markups stated above
-            
-            # soup contains only human-readable texts now to be compared near-duplicate
-            general_text = soup.get_text(separator=" ", strip=True)
-            general_tokens = tokenize_text(general_text)
-
-            return general_tokens
-        except Exception as e:
-            self.logger.error(f"An unexpected error has orccurred: {e}") 
-            return []
-    
     def __read_partial_index_from_disk(self, file_path: str) -> dict:
         """
         Reads/deserializes partial inverted index from file
