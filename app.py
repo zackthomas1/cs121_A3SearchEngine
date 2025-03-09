@@ -6,14 +6,16 @@ from utils import get_logger
 app = Flask(__name__)
 app_logger = get_logger("APP")
 
-# Create and load your inverted index instance.
-# (Assume the index has been built and stored on disk previously.)
+# Create and load inverted index
 inverted_index = InvertedIndex()
 
-# For example, if you have a method to load the master index or doc map, you could call it here.
+# Initialize globals when the module is loaded.
 doc_id_url_map      = inverted_index.load_doc_id_map_from_disk()
+doc_lengths         = inverted_index.load_doc_lengths_from_disk()
 doc_norms           = inverted_index.load_doc_norms_from_disk()
 token_to_file_map   = inverted_index.load_token_to_file_map_from_disk()
+
+avg_doc_length      = inverted_index.load_meta_data_from_disk()["aavg_doc_length"]
 total_docs          = inverted_index.load_meta_data_from_disk()["total_doc_indexed"]
 
 @app.route('/', methods=['GET', 'POST'])
