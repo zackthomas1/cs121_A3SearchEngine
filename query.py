@@ -55,11 +55,11 @@ def process_query(query: str) -> list[str]:
         list[str]: processed list of query tokens
 
     """
-    expanded_query = expand_query(query.lower())
-    query_tokens = tokenize_text(expanded_query)
+    # expanded_query = expand_query(query.lower())
+    query_tokens = tokenize_text(query)
     query_tokens = remove_stop_words(query_tokens)
-    query_tokens = query_tokens + stem_tokens(query_tokens)
-    query_tokens = list(set(query_tokens))
+    query_tokens = stem_tokens(query_tokens)
+    # query_tokens = list(set(query_tokens))
 
     query_logger.info(f"Query Tokens: {query_tokens}")
 
@@ -106,9 +106,9 @@ def ranked_search_cosine_similarity(query_tokens: list[str], inverted_index: Inv
             continue
 
         postings = merged_index[token]
-        for doc_id, freq, tf in postings:
+        for doc_id, freq, tf, structural_weight in postings:
             df = len(postings)
-            doc_token_weight = compute_tf_idf(tf, df, total_docs)
+            doc_token_weight = compute_tf_idf(tf, df, total_docs) * structural_weight
             scores[doc_id] += query_weight * doc_token_weight
 
     # Normalize scores to obtain cosine similarity
