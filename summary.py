@@ -1,7 +1,6 @@
 import time
 from inverted_index import InvertedIndex
-from query import expand_query, ranked_search_cosine_similarity
-from utils import tokenize_text
+from query import process_query, ranked_search_cosine_similarity
 
 def count_tokens(index: InvertedIndex) -> int:
     """
@@ -58,7 +57,7 @@ def retrive_relevant_urls(query: str, n: int, index: InvertedIndex) -> list[str]
     doc_norms = index.load_doc_norms_from_disk()
     token_to_file_map = index.load_token_to_file_map_from_disk()
     
-    query_tokens = tokenize_text(expand_query(query))
+    query_tokens = process_query(query)
 
     # Begin timing after recieving search query
     start_time = time.perf_counter() * 1000
@@ -88,27 +87,11 @@ if __name__ == "__main__":
 
     # m2 report
     # ---------------------------
-    N_RESULTS = 5
-    queries = ["cristina lopes",
-               "machine learning",
-               "ACM",
-               "master of software engineering"]
-    
-    print(f"Top {N_RESULTS} Query Results:")
-    for query in queries:
-        print(f"\tQuery: {query}")
-        top_query_results = retrive_relevant_urls(query, N_RESULTS, index)
-        for ranked_pos, url in enumerate(top_query_results, start=1):
-            print(f"\t {ranked_pos}. {url}")
-
-    # m3 report
-    # ---------------------------
-
     # N_RESULTS = 5
-    # queries = ["uci graphics",
-    #            "graduate learning",
-    #            "software engineering technology", 
-    #            "algorithm and data structure"]
+    # queries = ["cristina lopes",
+    #            "machine learning",
+    #            "ACM",
+    #            "master of software engineering"]
     
     # print(f"Top {N_RESULTS} Query Results:")
     # for query in queries:
@@ -116,3 +99,18 @@ if __name__ == "__main__":
     #     top_query_results = retrive_relevant_urls(query, N_RESULTS, index)
     #     for ranked_pos, url in enumerate(top_query_results, start=1):
     #         print(f"\t {ranked_pos}. {url}")
+
+    # m3 report
+    # ---------------------------
+
+    N_RESULTS = 5
+    queries = [
+        "Undergraduate Research Opportunities Program (UROP) at UCI"
+    ]
+    
+    print(f"Top {N_RESULTS} Query Results:")
+    for query in queries:
+        print(f"\tQuery: {query}")
+        top_query_results = retrive_relevant_urls(query, N_RESULTS, index)
+        for ranked_pos, url in enumerate(top_query_results, start=1):
+            print(f"\t {ranked_pos}. {url}")

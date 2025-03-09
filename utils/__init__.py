@@ -6,12 +6,13 @@ import logging
 from logging import Logger
 from urllib.parse import urlparse
 from nltk.tokenize import word_tokenize
-from nltk.stem import PorterStemmer
-from nltk.stem import WordNetLemmatizer
+from nltk.stem import PorterStemmer, WordNetLemmatizer
+from nltk.corpus import stopwords
 
 #
 lemmatizer = WordNetLemmatizer()
 stemmer = PorterStemmer()
+stop_words = set(stopwords.words("english"))
 
 def compute_tf_idf(tf: int, doc_freq: int, total_docs: int) -> int:
     """
@@ -67,18 +68,6 @@ def get_logger(name, filename=None):
     logger.addHandler(ch)
     return logger
 
-def lemmatize_tokens(tokens: list[str]) -> list[str]:
-    """
-    Apply nltk lemmatization algorithm to extracted tokens
-    
-    Parameters:
-        tokens (list[str]): a list of raw tokens 
-
-    Returns:
-        list[str]: a lemmatized list of tokens
-    """
-    return [lemmatizer.lemmatize(token) for token in tokens]
-
 def read_json_file(file_path: str, logger: Logger) -> dict:
     """
     Parameters:
@@ -126,6 +115,26 @@ def write_json_file(file_path: str, data: dict, logger: Logger) -> None:
             logger.info(f"Successful data write to json file: {file_path}")
     except Exception as e:
         logger.error(f"Unable to write data to json file: {file_path} - {e}")
+
+def remove_stop_words(tokens: list[str]) -> list[str]: 
+    """
+    Removes stop words from list of tokens
+    Returns:
+        list[str]: list of tokens with stop words removed
+    """
+    return [ token for token in tokens if token not in stop_words]
+
+def lemmatize_tokens(tokens: list[str]) -> list[str]:
+    """
+    Apply nltk lemmatization algorithm to extracted tokens
+    
+    Parameters:
+        tokens (list[str]): a list of raw tokens 
+
+    Returns:
+        list[str]: a lemmatized list of tokens
+    """
+    return [lemmatizer.lemmatize(token) for token in tokens]
 
 def stem_tokens(tokens: list[str]) -> list[str]:
     """
