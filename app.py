@@ -43,4 +43,4 @@ def index():
     return render_template('index.html', top_results=top_results, results_count = len(top_results), delta_time = f"{end_time - start_time:.0f}")
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000)
