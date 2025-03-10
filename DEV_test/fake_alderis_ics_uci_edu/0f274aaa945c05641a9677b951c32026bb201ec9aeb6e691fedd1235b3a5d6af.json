@@ -1,0 +1,5 @@
+{
+    "url": "https://example.com/test3",
+    "content": "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"UTF-8\">\n<title>Form and Table Test</title>\n</head>\n<body>\n<h1>Text analysis is crucial for NLP.</h1>\n<p>Feature extraction is a key part of ML models.</p>\n<table>\n<tr><th>Algorithm</th><th>Accuracy</th></tr>\n<tr><td>Naive Bayes</td><td>85%</td></tr>\n<tr><td>Support Vector Machine</td><td>90%</td></tr>\n</table>\n<form>\n<label for=\"name\">Name:</label>\n<input type=\"text\" id=\"name\" name=\"name\">\n</form>\n</body>\n</html>",
+    "encoding": "utf-8"
+}
