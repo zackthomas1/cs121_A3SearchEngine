@@ -110,10 +110,11 @@ optional arguments:
 --rootdir <file_path> : File path to document corpus directory
 
 ### Running Search Engine and Entering a Query
+#### Visit site locally
+Run:
 $ ```python -m flask run```
-
-Visit site locally
+Visit URL:
 http://127.0.0.1:5000
 
-visit on publicly hosted web page
+#### Visit on publicly hosted web page
 http://52.53.166.209:5000/
