@@ -95,8 +95,8 @@ settings.json
 
 ### Verify the Environment
 $ ```which python```
-
-### Setup
+## Running Program
+### Download Prerequisites 
 $ ```python setup.py```
 
 Downloads required nltk resources. Run setup.py once before building index or entering search query
