@@ -2,15 +2,15 @@ import os
 import gc
 import math
 import simhash
-import pickle
 from bs4 import BeautifulSoup
-from collections import Counter, defaultdict
-from utils import clean_url, compute_tf_idf, get_logger, read_pickle_file, write_pickle_file, read_json_file, write_json_file, tokenize_text, stem_tokens, is_non_html_extension, is_xml
+from collections import defaultdict
 from datastructures import IndexCounter
 from pympler.asizeof import asizeof
+from urllib.parse import urljoin, urlparse
+from utils import clean_url, compute_tf_idf, get_logger, read_pickle_file, write_pickle_file, read_json_file, write_json_file, tokenize_text, stem_tokens, is_non_html_extension, is_xml
 
 # Constants 
-PARTIAL_INDEX_SIZE_THRESHOLD_KB = 14000  # set threshold to 20000 KB (margin of error: 5000 KB)
+PARTIAL_INDEX_SIZE_THRESHOLD_KB = 18000  # set threshold to 20000 KB (margin of error: 5000 KB)
 DOC_THRESHOLD_COUNT = 125
 
 MASTER_INDEX_DIR        = "index/master_index"  # "index/master_index"
@@ -23,6 +23,8 @@ DOC_LENGTH_FILE     = os.path.join(META_DIR, "doc_length.json")
 DOC_NORMS_FILE      = os.path.join(META_DIR, "doc_norms.json")
 MASTER_INDEX_FILE   = os.path.join(MASTER_INDEX_DIR, "master_index.json")
 META_DATA_FILE      = os.path.join(META_DIR, "meta_data.json")
+PAGERANK_FILE       = os.path.join(META_DIR, "page_rank.json")
+LINKGRAPH_FILE      = os.path.join(META_DIR, "link_graph.json")
 
 class InvertedIndex: 
     def __init__(self):
@@ -33,14 +35,15 @@ class InvertedIndex:
         self.alphanumerical_index: dict[str, dict[str, list[tuple[int, int, float, float]]]] = defaultdict(lambda: defaultdict(list)) # {letter/num: {token: [(docid, freq, tf_score, structural_weight)]}}
         self.alphanumerical_counts: dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
         
-        self.doc_id_map                 = defaultdict(str) # {doc_id: url}
-        self.doc_lengths                = defaultdict()
-        self.visited_content_simhashes  = set()
+        self.doc_id_map                 = defaultdict(str)  # Use to get url associated with doc_id {doc_id: url}
+        self.doc_lengths                = defaultdict()     # Use for bm25 rank
+        self.link_graph                 = defaultdict(list) # Use for PageRank
+        self.visited_content_simhashes  = set()             # Use for exact/near duplicate content
 
         self.doc_id                     = 0
-        self.doc_count_partial_index    = 0 # Rerset to zero every time a partial index is created
+        self.doc_count_partial_index    = 0 # Reset to zero every time a partial index is created
         self.total_doc_indexed          = 0 # Tracks the number of documents successfully processed/indexed (not skipped).
-        self.doc_lengths_sum            = 0
+        self.doc_lengths_sum            = 0 # Use to compute average doc length
 
         self.logger = get_logger("INVERTED_INDEX")
 
@@ -119,18 +122,18 @@ class InvertedIndex:
 
         for token in query_tokens:
             if token in token_to_file_map:
-                    file_list = token_to_file_map[token]
-                    self.logger.info(f"'{token}' found in {len(file_list)} file/s")
-                    for file_path in file_list:
-                        # Read in partial index from file
-                        partial_index = self.__read_partial_index_from_disk(file_path)
+                file_list = token_to_file_map[token]
+                self.logger.info(f"'{token}' found in {len(file_list)} file/s")
+                for file_path in file_list:
+                    # Read in partial index from file
+                    partial_index = self.__read_partial_index_from_disk(file_path)
 
-                        # Search for token in partial index and add found query tokens to merged_index
-                        if token in partial_index: 
-                            if token in merged_index: 
-                                merged_index[token].extend(partial_index[token])
-                            else: 
-                                merged_index[token] = partial_index[token]
+                    # Search for token in partial index and add found query tokens to merged_index
+                    if token in partial_index: 
+                        if token in merged_index: 
+                            merged_index[token].extend(partial_index[token])
+                        else: 
+                            merged_index[token] = partial_index[token]
 
         return merged_index
 
@@ -159,6 +162,11 @@ class InvertedIndex:
         doc_norms = read_json_file(DOC_NORMS_FILE, self.logger)
         doc_norms = {int(key): float(value) for key, value in doc_norms.items()}
         return doc_norms
+
+    def load_page_rank_from_disk(self) -> dict:
+        """
+        """
+        return read_json_file(PAGERANK_FILE, self.logger)
 
     def load_master_index_from_disk(self) -> dict:
         """
@@ -192,7 +200,7 @@ class InvertedIndex:
 
         return token_to_file_map
 
-    def precompute_doc_norms(self) -> None:
+    def compute_doc_norms(self) -> None:
         """
         Precomputes the Euclidean norm of each document's vector using tf-idf weighting. 
 
@@ -237,6 +245,57 @@ class InvertedIndex:
 
         write_json_file(DOC_NORMS_FILE, doc_norms, self.logger)
         self.logger.info(f"Document norms saved to: {DOC_NORMS_FILE}")
+
+    def compute_page_rank(self, damping: float = 0.85, max_iter: int = 50, convergence_threshold: float = 1.0e-4) -> dict:
+        """
+        Parameters
+            damping (float): probability that a user will continue following links from a page rather than jumping to a random page
+            mat_iter (int): Maximum number of iterations page rank algorithm is allowed to run
+            convergence_threshold (float): when the total change across all pages falls below threshold, the algorithm has converged sufficiently and stops iterating
+        """
+
+        self.logger.info("Computing PageRank...")
+
+        doc_id_map = self.load_doc_id_map_from_disk()
+        url_to_doc_id = {url: doc_id for doc_id, url in doc_id_map.items()}
+
+        # Build in-corpus graph: for each doc_id, keep only outlinks that are in the corpus 
+        graph = {}
+
+        link_graph = read_json_file(LINKGRAPH_FILE, self.logger)
+        for doc_id, outlinks in link_graph.items():
+            valid_links = [url_to_doc_id[url] for url in outlinks if url in url_to_doc_id]
+            graph[doc_id] = valid_links
+
+        # Ensure every docu is in graph 
+        for doc_id in doc_id_map.keys():
+            if doc_id not in graph: 
+                graph[doc_id] = []
+
+        N = len(graph)
+        pr = {doc_id: 1.0 / N for doc_id in graph} # Initialize PageRank values
+
+        for iteration in range(max_iter): 
+            new_pr = {doc_id: (1.0 - damping) / N for doc_id in graph}
+            for doc_id in graph: 
+                outlinks = graph[doc_id]
+                if outlinks: 
+                    share = pr[doc_id] / len(outlinks)
+                    for dest in outlinks: 
+                        new_pr[dest] += damping * share
+
+                else: 
+                    # Distribute dangling page rank equally
+                    for dest in new_pr: 
+                        new_pr[dest] += damping * (pr[doc_id] / N)
+
+            diff = sum(abs(new_pr[doc_id] - pr[doc_id]) for doc_id in pr)
+            pr = new_pr
+            if diff < convergence_threshold: 
+                self.logger.info(f"PageRank converged after {iteration +  1} iterations")
+                break
+        write_json_file(PAGERANK_FILE, pr, self.logger)
+        self.logger.info(f"PageRank scores saved to: {PAGERANK_FILE}")
         
     def __process_document(self, file_path: str, doc_id: int) -> None:
         """
@@ -270,8 +329,10 @@ class InvertedIndex:
             self.logger.warning(f"Skipping doc {doc_id}: content is XML - {url}")
             return
 
+        # Extract hyperlinks to build the document graph
+        self.link_graph[doc_id] = self.__extract_hyperlinks(content, url)
+
         # Extract tokens from html content
-        # tokens = self.__extract_tokens(content)
         tokens_with_freq_and_weight = self.__extract_content_structure(content)
         tokens = tokens_with_freq_and_weight.keys()
 
@@ -290,8 +351,6 @@ class InvertedIndex:
         # Update doc id map
         self.__update_doc_id_map(doc_id, url)
         self.__update_doc_lengths(doc_id, len(tokens))
-
-        # Extract structure of content and tokens
 
         # Update the inverted index with document tokens
         alphanumerical_indexes_modified = set() # Track which partial indexes are being updated this document
@@ -357,6 +416,11 @@ class InvertedIndex:
         """
         write_json_file(DOC_LENGTH_FILE, self.doc_lengths, self.logger)
 
+    def __save_link_graph(self) -> None: 
+        """
+        """
+        write_json_file(LINKGRAPH_FILE, self.link_graph, self.logger)
+
     def __save_index_to_disk(self, partial_index_char: str) -> None: 
         """
         Store the current in-memory partial index to a .pkl file
@@ -417,8 +481,34 @@ class InvertedIndex:
             self.doc_id_map.clear()
             self.__save_doc_lengths_to_disk()
             self.doc_lengths.clear()
+            self.__save_link_graph()
+            self.link_graph.clear()
 
         gc.collect()
+        
+    def __extract_hyperlinks(self, content: str, base_url: str) -> list[str]: 
+        """
+        """
+        try:
+            soup = BeautifulSoup(content, 'html.parser')
+            hyperlinks = []
+            for a in soup.find_all('a', href=True):
+                link = a['href']
+                if link.strip() == "": 
+                    continue
+
+                if base_url:
+                    link = urljoin(base_url, link)
+
+                parsed = urlparse(link)
+                if parsed.scheme in ('http', 'https') and parsed.netloc:
+                    cleaned_href = clean_url(link)
+                    hyperlinks.append(cleaned_href)
+
+            return list(set(hyperlinks))
+        except Exception as e: 
+            self.logger.error(f"Extacting hyperlinks failed: {e}")
+            return []
 
     def __extract_content_structure(self, content: str, weigh_factor: int = 2) -> dict[int, tuple[int,float]]: 
         """
@@ -443,7 +533,7 @@ class InvertedIndex:
             
             # soup contains only human-readable texts now to be compared near-duplicate
             general_text = soup.get_text(separator=" ", strip=True)
-            general_tokens = tokenize_text(general_text)
+            general_tokens = tokenize_text(general_text.lower())
             general_tokens = stem_tokens(general_tokens)  # Apply stemming
 
             token_counts = defaultdict(int)
