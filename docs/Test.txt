@@ -9,12 +9,13 @@ Test queries
 --------------------------
 Good Preformance:
 
-    uci graphics
+    computer graphics
     graduate learning
     Computer software
     data structures
     Women in cs
     academic advising
+    Donald Bren Admissions
     Bachelors of Science in Informatics
     Hackathons at UCI 2024
     Hacks at UCI events
@@ -28,7 +29,7 @@ Poor Preformance:
     UCI ICS alumni 
     Honors program at UCi ICS
     UC Irvine Clubs
-    Donald Bren Admissions
+    Bachelors of Science in Informatics
     Computer vision and ml uci 
     faculty spotlight
     
