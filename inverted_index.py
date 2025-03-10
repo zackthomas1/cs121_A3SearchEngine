@@ -53,14 +53,13 @@ class InvertedIndex:
         os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
         os.makedirs(TOKEN_TO_FILE_MAP_DIR, exist_ok=True) 
 
-    # Initializes directories a-z within the partial index
-    for letter_ascii in range(ord('a'), ord('z') + 1):
-        os.makedirs(os.path.join(PARTIAL_INDEX_DIR, chr(letter_ascii)), exist_ok=True)
+        # Initializes directories a-z within the partial index
+        for letter_ascii in range(ord('a'), ord('z') + 1):
+            os.makedirs(os.path.join(PARTIAL_INDEX_DIR, chr(letter_ascii)), exist_ok=True)
 
-    # Initializes directories 0-9 within the partial index
-    for num in range(10):
-        os.makedirs(os.path.join(PARTIAL_INDEX_DIR, str(num)), exist_ok=True)
-
+        # Initializes directories 0-9 within the partial index
+        for num in range(10):
+            os.makedirs(os.path.join(PARTIAL_INDEX_DIR, str(num)), exist_ok=True)
 
     def build_index(self, corpus_dir: str) -> None: 
         """
