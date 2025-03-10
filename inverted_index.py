@@ -476,6 +476,47 @@ class InvertedIndex:
 
         """
         return read_pickle_file(file_path, self.logger)
+    
+    def calculate_pagerank(self, graph_file_path: str, num_iter: int = 100, damping_factor: float = 0.85, tol: float = 1e-6) -> dict[int, float]:
+        """ Concept similar to Markov Chain """
+        page_graph = self.__load_graph(graph_file_path)
+        num_pages = len(page_graph)
+        init_score = 1.0 / num_pages
+        pagerank = {doc_id: init_score for doc_id in page_graph}  # init pagerank = 1.0 for all pages
+
+        # Iterate until converge (just like training GD model)
+        for _ in range(num_iter):
+            new_pagerank = defaultdict(float)
+
+            # Compute new PageRank scores (propagate -- chain -- through all documents)
+            for cur_doc, out_docs in page_graph.items():
+                if out_docs:  # if outgoing document page exists
+                    propagated_score = pagerank[doc_id] / len(out_docs)  # PR = current PR score / number of outgoing links
+                    for doc in out_docs:
+                        new_pagerank[doc] += propagated_score  # increment score by such propagated score (chain weight)
+
+            # Apply damping factor (0.85 is official default mentioned in the PageRank research paper)
+            for doc_id in pagerank:
+                new_pagerank[doc_id] = ((1 - damping_factor) / num_pages) + (damping_factor * new_pagerank[doc_id])
+
+            # Check for convergence (early stopping condition just like ML model training)
+            if max(abs(new_pagerank[doc] - pagerank[doc]) for doc in pagerank) < tol:
+                break
+
+            pagerank = new_pagerank
+
+        return pagerank
+
+    def __load_graph(self, graph_file_path: str) -> dict[int, list[int]]:
+        page_graph = defaultdict(list)
+        with open(graph_file_path, "rb") as f:
+            while True:
+                try:
+                    cur_doc_id, out_doc_id = pickle.load(f)
+                    page_graph[cur_doc_id] = out_doc_id
+                except EOFError:
+                    break
+        return page_graph
 
     # Non-member functions
     @staticmethod
