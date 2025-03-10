@@ -2,15 +2,15 @@ import os
 import gc
 import math
 import simhash
-import pickle
 from bs4 import BeautifulSoup
-from collections import Counter, defaultdict
-from utils import clean_url, compute_tf_idf, get_logger, read_pickle_file, write_pickle_file, read_json_file, write_json_file, tokenize_text, stem_tokens, is_non_html_extension, is_xml
+from collections import defaultdict
 from datastructures import IndexCounter
 from pympler.asizeof import asizeof
+from urllib.parse import urljoin, urlparse
+from utils import clean_url, compute_tf_idf, get_logger, read_pickle_file, write_pickle_file, read_json_file, write_json_file, tokenize_text, stem_tokens, is_non_html_extension, is_xml
 
 # Constants 
-PARTIAL_INDEX_SIZE_THRESHOLD_KB = 14000  # set threshold to 20000 KB (margin of error: 5000 KB)
+PARTIAL_INDEX_SIZE_THRESHOLD_KB = 18000  # set threshold to 20000 KB (margin of error: 5000 KB)
 DOC_THRESHOLD_COUNT = 125
 
 MASTER_INDEX_DIR        = "index/master_index"  # "index/master_index"
@@ -246,7 +246,7 @@ class InvertedIndex:
         write_json_file(DOC_NORMS_FILE, doc_norms, self.logger)
         self.logger.info(f"Document norms saved to: {DOC_NORMS_FILE}")
 
-    def compute_page_rank(self, damping: float = 0.85, max_iter: int = 100, convergence_threshold: float = 1.0e-5) -> dict:
+    def compute_page_rank(self, damping: float = 0.85, max_iter: int = 50, convergence_threshold: float = 1.0e-4) -> dict:
         """
         Parameters
             damping (float): probability that a user will continue following links from a page rather than jumping to a random page
@@ -276,7 +276,7 @@ class InvertedIndex:
         pr = {doc_id: 1.0 / N for doc_id in graph} # Initialize PageRank values
 
         for iteration in range(max_iter): 
-            new_pr = {doc_id: (1.0 - damping) / N for do-id in graph}
+            new_pr = {doc_id: (1.0 - damping) / N for doc_id in graph}
             for doc_id in graph: 
                 outlinks = graph[doc_id]
                 if outlinks: 
@@ -330,7 +330,7 @@ class InvertedIndex:
             return
 
         # Extract hyperlinks to build the document graph
-        self.link_graph[doc_id] = self.__extract_hyperlinks(content)
+        self.link_graph[doc_id] = self.__extract_hyperlinks(content, url)
 
         # Extract tokens from html content
         tokens_with_freq_and_weight = self.__extract_content_structure(content)
@@ -486,17 +486,26 @@ class InvertedIndex:
 
         gc.collect()
         
-    def __extract_hyperlinks(self, content: str) -> list[str]: 
+    def __extract_hyperlinks(self, content: str, base_url: str) -> list[str]: 
         """
         """
         try:
             soup = BeautifulSoup(content, 'html.parser')
             hyperlinks = []
             for a in soup.find_all('a', href=True):
-                href = a['href']
-                cleaned_href = clean_url(href)
-                hyperlinks.append(cleaned_href)
-            return hyperlinks
+                link = a['href']
+                if link.strip() == "": 
+                    continue
+
+                if base_url:
+                    link = urljoin(base_url, link)
+
+                parsed = urlparse(link)
+                if parsed.scheme in ('http', 'https') and parsed.netloc:
+                    cleaned_href = clean_url(link)
+                    hyperlinks.append(cleaned_href)
+
+            return list(set(hyperlinks))
         except Exception as e: 
             self.logger.error(f"Extacting hyperlinks failed: {e}")
             return []
@@ -524,7 +533,7 @@ class InvertedIndex:
             
             # soup contains only human-readable texts now to be compared near-duplicate
             general_text = soup.get_text(separator=" ", strip=True)
-            general_tokens = tokenize_text(general_text)
+            general_tokens = tokenize_text(general_text.lower())
             general_tokens = stem_tokens(general_tokens)  # Apply stemming
 
             token_counts = defaultdict(int)
