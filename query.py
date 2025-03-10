@@ -65,7 +65,11 @@ def process_query(query: str) -> list[str]:
 
     return query_tokens
 
-def ranked_search_cosine_similarity(query_tokens: list[str], inverted_index: InvertedIndex, total_docs: int, precomputed_doc_norms: dict, token_to_file_map: dict) -> list:
+def ranked_search_cosine_similarity(query_tokens: list[str], 
+                                    inverted_index: InvertedIndex, 
+                                    total_docs: int, 
+                                    precomputed_doc_norms: dict, 
+                                    token_to_file_map: dict) -> list:
     """
 
     Documents are ranked based on directional similarity rather than raw frequency.
@@ -123,7 +127,12 @@ def ranked_search_cosine_similarity(query_tokens: list[str], inverted_index: Inv
     # Sort the merged results by their cosine similarity (quality), tie-break with doc_id
     return sorted(scores.items(), key=lambda item: (-item[1], item[0]))
 
-def ranked_search_bm25(query_tokens: list[str], inverted_index: InvertedIndex, total_docs: int, avg_doc_length: float, doc_lengths: dict, token_to_file_map: dict): 
+def ranked_search_bm25(query_tokens: list[str], 
+                       inverted_index: InvertedIndex, 
+                       total_docs: int, 
+                       avg_doc_length: float, 
+                       doc_lengths: dict, 
+                       token_to_file_map: dict): 
     """
     Ranks documents using BM25 with dynamic structural weighting.
     
@@ -178,3 +187,19 @@ def ranked_search_bm25(query_tokens: list[str], inverted_index: InvertedIndex, t
 
     # Return documents sorted by descending BM25 score, tie-breaking on doc_id.
     return sorted(scores.items(), key=lambda item: (-item[1], item[0]))
+
+def add_page_rank(scores: dict,
+                  pagerank: dict,
+                  alpha: float = 1.0,
+                  beta: float = 1.0   ) -> list:
+    """
+    
+    """
+    
+    # Combine cosine similarity score with PageRank.
+    combined_scores = defaultdict(float)
+    for doc_id, text_score in scores.items():
+        pr_score = pagerank.get(doc_id, 0.0)
+        combined_scores[doc_id] = alpha * text_score + beta * pr_score
+
+    return sorted(combined_scores.items(), key=lambda item: (-item[1], item[0]))
