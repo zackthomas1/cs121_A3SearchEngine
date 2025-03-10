@@ -1,0 +1,5 @@
+{
+    "url": "https://example.com/test5",
+    "content": "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"ASCII\">\n<title>ASCII Encoding Test</title>\n</head>\n<body>\n<h1>Tokenization is fundamental in text analysis.</h1>\n<p>Rule-based models perform well in structured tasks.</p>\n<p>TF-IDF assigns importance to rare words.</p>\n</body>\n</html>",
+    "encoding": "ascii"
+}
