@@ -115,7 +115,5 @@ $ ```python -m flask run```
 Visit site locally
 http://127.0.0.1:5000
 
-visit on hosted web page
+visit on publicly hosted web page
 http://52.53.166.209:5000/
-
-
