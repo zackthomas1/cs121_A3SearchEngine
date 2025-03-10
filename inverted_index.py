@@ -1,252 +1,598 @@
 import os
-import re
 import gc
-import json
-import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import RegexpTokenizer
-from nltk.tokenize import word_tokenize
-from nltk.stem import PorterStemmer
-from nltk.stem import WordNetLemmatizer
+import math
+import simhash
 from bs4 import BeautifulSoup
-from collections import Counter, defaultdict
-from utils import clean_url, is_non_html_extension, get_logger
+from collections import defaultdict
+from datastructures import IndexCounter
+from pympler.asizeof import asizeof
+from urllib.parse import urljoin, urlparse
+from utils import clean_url, compute_tf_idf, get_logger, read_pickle_file, write_pickle_file, read_json_file, write_json_file, tokenize_text, stem_tokens, is_non_html_extension, is_xml
 
 # Constants 
-STOPWORDS = set(stopwords.words('english'))
-DOC_THRESHOLD = 250 # Dump index to latest JSON file every 100 docs
-# NEW_FILE_THRESHOLD = 1000   # Create new index file every 1000 docs
-DOC_ID_DIR = "index/doc_id_map"
-PARTIAL_INDEX_DIR = "index/partial_index"
-MASTER_INDEX_DIR = "index/master_index"
-MASTER_INDEX_FILE = os.path.join(MASTER_INDEX_DIR, "master_index.json")
-DOC_ID_MAP_FILE = os.path.join(DOC_ID_DIR, "doc_id_map.json")
+PARTIAL_INDEX_SIZE_THRESHOLD_KB = 18000  # set threshold to 20000 KB (margin of error: 5000 KB)
+DOC_THRESHOLD_COUNT = 125
 
-#
-lemmatizer = WordNetLemmatizer()
-stemmer = PorterStemmer()
-tokenizer = RegexpTokenizer(r'\w+')
+MASTER_INDEX_DIR        = "index/master_index"  # "index/master_index"
+META_DIR                = "index/meta_data"    # "index/doc_id_map"
+PARTIAL_INDEX_DIR       = "index/partial_index" # "index/partial_index"
+TOKEN_TO_FILE_MAP_DIR   = "index/meta_data/token_to_file_map"
+
+DOC_ID_MAP_FILE     = os.path.join(META_DIR, "doc_id_map.json")
+DOC_LENGTH_FILE     = os.path.join(META_DIR, "doc_length.json")
+DOC_NORMS_FILE      = os.path.join(META_DIR, "doc_norms.json")
+MASTER_INDEX_FILE   = os.path.join(MASTER_INDEX_DIR, "master_index.json")
+META_DATA_FILE      = os.path.join(META_DIR, "meta_data.json")
+PAGERANK_FILE       = os.path.join(META_DIR, "page_rank.json")
+LINKGRAPH_FILE      = os.path.join(META_DIR, "link_graph.json")
 
 class InvertedIndex: 
-    def __init__(self): 
-        self.index = defaultdict(list)
-        self.doc_count = 0
-        # self.total_doc_count = 0
-        # self.current_index_file = self.get_latest_index_file()
-        self.doc_id_map = {} # map file names to docid
-        self.logger = get_logger("INVERTED_INDEX")
-        os.makedirs(DOC_ID_DIR, exist_ok=True)  # Ensure index storage directory exist
-        os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
-        os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
+    def __init__(self):
+        """ 
+        Prepares to Index data by initializing storage directories and counter/keying variables.
+        """
+        # Note, modify the Tuple[] in the case you want to add more attributes to the posting
+        self.alphanumerical_index: dict[str, dict[str, list[tuple[int, int, float, float]]]] = defaultdict(lambda: defaultdict(list)) # {letter/num: {token: [(docid, freq, tf_score, structural_weight)]}}
+        self.alphanumerical_counts: dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
+        
+        self.doc_id_map                 = defaultdict(str)  # Use to get url associated with doc_id {doc_id: url}
+        self.doc_lengths                = defaultdict()     # Use for bm25 rank
+        self.link_graph                 = defaultdict(list) # Use for PageRank
+        self.visited_content_simhashes  = set()             # Use for exact/near duplicate content
 
-    def build_index(self, folder_path): 
+        self.doc_id                     = 0
+        self.doc_count_partial_index    = 0 # Reset to zero every time a partial index is created
+        self.total_doc_indexed          = 0 # Tracks the number of documents successfully processed/indexed (not skipped).
+        self.doc_lengths_sum            = 0 # Use to compute average doc length
+
+        self.logger = get_logger("INVERTED_INDEX")
+
+        # Initializes directories for index storage
+        os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
+        os.makedirs(META_DIR, exist_ok=True) 
+        os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
+        os.makedirs(TOKEN_TO_FILE_MAP_DIR, exist_ok=True) 
+
+    # Initializes directories a-z within the partial index
+    for letter_ascii in range(ord('a'), ord('z') + 1):
+        os.makedirs(os.path.join(PARTIAL_INDEX_DIR, chr(letter_ascii)), exist_ok=True)
+
+    # Initializes directories 0-9 within the partial index
+    for num in range(10):
+        os.makedirs(os.path.join(PARTIAL_INDEX_DIR, str(num)), exist_ok=True)
+
+
+    def build_index(self, corpus_dir: str) -> None: 
         """
         Process all JSON files in folder and build index.
         """
-        doc_id = 0
-        for root, dirs, files in os.walk(folder_path):
+        for root, dirs, files in os.walk(corpus_dir):
             for file_name in files:
-                self.logger.info(f"Indexing doc: {doc_id}")
+                self.logger.info(f"Indexing doc: {self.doc_id}")
                 if file_name.endswith(".json"):
-                    self.__process_document(os.path.join(root, file_name), doc_id)
-                doc_id += 1
+                    self.__process_document(os.path.join(root, file_name), self.doc_id)
+                else:
+                    self.logger.warning(f"File not does not end with .json extention: {file_name}")
+                
+                # Update counters
+                self.doc_id += 1
                 
         # Dump any remaining tokens to disk
-        if self.index: 
-            self.__save_index_to_disk()
-            self.index.clear()
-            gc.collect()
+        alphanumerical_indexes_modified = [alphanum_char for alphanum_char, partial_index in self.alphanumerical_index.items() if partial_index]
+        self.__dump_to_disk(set(alphanumerical_indexes_modified), override=True)
 
-    def build_master_index(self):
-        """Combines all partial indexes into a single master index while preserving order."""
-        self.logger.info(f"Building Master index...")
+        # Save index meta data disk
+        self.__save_meta_data_to_disk()
+
+    def build_master_index(self) -> None:
+        """
+        Combines all partial indexes into a single master index while preserving order.
+        """
 
         master_index = defaultdict(list)
 
+        self.logger.info(f"Building Master index...")
+
         # Iterate through all partial index files
-        for file_name in sorted(os.listdir(PARTIAL_INDEX_DIR)):  # Ensure order is maintained
-            self.logger.info(f"Adding: {file_name}")
-            if file_name.startswith("index_part_") and file_name.endswith(".json"):
-                file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
-                with open(file_path, "r", encoding="utf-8") as f:
-                    partial_index = json.load(f)
+        for dir_name in sorted(os.listdir(PARTIAL_INDEX_DIR)):  # Ensure order is maintained
+            dir_path = os.path.join(PARTIAL_INDEX_DIR, dir_name)
+            for file_name in os.listdir(dir_path):
+                file_path = os.path.join(dir_path, file_name)
+                self.logger.info(f"Adding: {file_path}")
+
+                partial_index = self.__read_partial_index_from_disk(file_path)
 
                 # Merge token postings while maintaining order
                 for token, postings in partial_index.items():
                     master_index[token].extend(postings)
 
-        # Save master index to disk
-        with open(MASTER_INDEX_FILE, "w", encoding="utf-8") as f:
-            json.dump(master_index, f, indent=4)
-
-        self.logger.info(f"Master index built successfully and saved to {MASTER_INDEX_FILE}")
+        write_json_file(MASTER_INDEX_FILE, master_index, self.logger)
     
-    def search(self, query): 
-        self.logger.info(f"Searching for query tokens in inverted index: {query}")
-        tokens = InvertedIndex.__stem_tokens(InvertedIndex.__tokenize_text(query))
+    def construct_merged_index_from_disk(self, query_tokens: list[str], token_to_file_map: dict) -> dict:
+        """
+        Constructs inverted index containing only query tokens from partial inverted index stored on disk
+        
+        Parameters:
+            query_tokens (list[str]): 
 
-        return self.__merge_from_disk(tokens)
+        Returns:
+            dict: inverted index which contains only the query tokens entries from the partial index
+        """
 
-    def __process_document(self, file_path, doc_id):
-        data = self.__read_json_file(file_path)
+        merged_index = {}
+
+        for token in query_tokens:
+            if token in token_to_file_map:
+                file_list = token_to_file_map[token]
+                self.logger.info(f"'{token}' found in {len(file_list)} file/s")
+                for file_path in file_list:
+                    # Read in partial index from file
+                    partial_index = self.__read_partial_index_from_disk(file_path)
+
+                    # Search for token in partial index and add found query tokens to merged_index
+                    if token in partial_index: 
+                        if token in merged_index: 
+                            merged_index[token].extend(partial_index[token])
+                        else: 
+                            merged_index[token] = partial_index[token]
+
+        return merged_index
+
+    def load_doc_id_map_from_disk(self) -> dict:
+        """
+        Load the doc_id map from disk to get urls
+        Returns: 
+            dict: A dictionary mapping doc id numbers to url strings
+        """
+        return read_json_file(DOC_ID_MAP_FILE, self.logger)
+    
+    def load_doc_lengths_from_disk(self) -> dict:
+        """
+        Load the doc length map from disk
+        Returns: 
+            dict: A dictionary mapping doc id numbers to length of the document
+        """
+        return read_json_file(DOC_LENGTH_FILE, self.logger)
+
+    def load_doc_norms_from_disk(self) -> dict:
+        """
+        Loads the precomputed document norms from disk.
+        Returns:
+            dict: A dictionary mapping document IDs(int) to their norm values(float).
+        """
+        doc_norms = read_json_file(DOC_NORMS_FILE, self.logger)
+        doc_norms = {int(key): float(value) for key, value in doc_norms.items()}
+        return doc_norms
+
+    def load_page_rank_from_disk(self) -> dict:
+        """
+        """
+        return read_json_file(PAGERANK_FILE, self.logger)
+
+    def load_master_index_from_disk(self) -> dict:
+        """
+        Load master index from dist
+        Returns: 
+            dict: A dictionary mapping token(str) to postings(list[tuple[int, int, float])
+        """
+        return read_json_file(MASTER_INDEX_FILE, self.logger)
+
+    def load_meta_data_from_disk(self) -> dict:
+        """
+        Load index meta file from disk
+        
+        Returns: 
+            dict: A dictionary of inverted index meta data
+        """
+        return read_json_file(META_DATA_FILE, self.logger)
+    
+    def load_token_to_file_map_from_disk(self) -> dict:
+        """
+        Load token to file map from disk
+        Returns: 
+            dict: A dictionary mapping tokens(str) to files(str)
+        """
+        token_to_file_map = defaultdict(list)
+        for file_name in os.listdir(TOKEN_TO_FILE_MAP_DIR):
+            file_path = os.path.join(TOKEN_TO_FILE_MAP_DIR, file_name)
+            char_token_to_file_map = read_pickle_file(file_path, self.logger)
+            for token, files in char_token_to_file_map.items():
+                token_to_file_map[token] = files
+
+        return token_to_file_map
+
+    def compute_doc_norms(self) -> None:
+        """
+        Precomputes the Euclidean norm of each document's vector using tf-idf weighting. 
+
+        The norm of a document is the squer root of the sum of squared tf-idf weights
+        of all the tokens which are in that document. 
+
+        Store precomputed norms in JSON file for look up at query time.
+        """
+
+        self.logger.info("Precomputing document normals...")
+
+        total_docs = self.load_meta_data_from_disk()["total_doc_indexed"]
+        
+        # Compute global document frequency for each token
+        global_df = defaultdict(int)
+        for subdir in os.listdir(PARTIAL_INDEX_DIR):
+            subdir_path = os.path.join(PARTIAL_INDEX_DIR, subdir)
+            for file_name in os.listdir(subdir_path):
+                file_path = os.path.join(subdir_path, file_name)
+                partial_index = self.__read_partial_index_from_disk(file_path)
+                for token, postings in partial_index.items():
+                    global_df[token] += len(postings)
+
+        self.logger.info("Gloabl document frequencies computed.")
+
+        # Compute document norms using tf-idf weights
+        doc_norms = defaultdict(float)
+        for subdir in os.listdir(PARTIAL_INDEX_DIR):
+            subdir_path = os.path.join(PARTIAL_INDEX_DIR, subdir)
+            for file_name in os.listdir(subdir_path):
+                file_path = os.path.join(subdir_path, file_name)
+                partial_index = self.__read_partial_index_from_disk(file_path)
+                for token, postings in partial_index.items():
+                    df = global_df[token]
+                    for doc_id, freq, tf, structural_weight in postings: 
+                        weight = compute_tf_idf(tf, df, total_docs)
+                        doc_norms[doc_id] += weight ** 2
+
+        # Take square root to compute Euclidean norm
+        for doc_id in doc_norms: 
+            doc_norms[doc_id] = math.sqrt(doc_norms[doc_id])
+
+        write_json_file(DOC_NORMS_FILE, doc_norms, self.logger)
+        self.logger.info(f"Document norms saved to: {DOC_NORMS_FILE}")
+
+    def compute_page_rank(self, damping: float = 0.85, max_iter: int = 50, convergence_threshold: float = 1.0e-4) -> dict:
+        """
+        Parameters
+            damping (float): probability that a user will continue following links from a page rather than jumping to a random page
+            mat_iter (int): Maximum number of iterations page rank algorithm is allowed to run
+            convergence_threshold (float): when the total change across all pages falls below threshold, the algorithm has converged sufficiently and stops iterating
+        """
+
+        self.logger.info("Computing PageRank...")
+
+        doc_id_map = self.load_doc_id_map_from_disk()
+        url_to_doc_id = {url: doc_id for doc_id, url in doc_id_map.items()}
+
+        # Build in-corpus graph: for each doc_id, keep only outlinks that are in the corpus 
+        graph = {}
+
+        link_graph = read_json_file(LINKGRAPH_FILE, self.logger)
+        for doc_id, outlinks in link_graph.items():
+            valid_links = [url_to_doc_id[url] for url in outlinks if url in url_to_doc_id]
+            graph[doc_id] = valid_links
+
+        # Ensure every docu is in graph 
+        for doc_id in doc_id_map.keys():
+            if doc_id not in graph: 
+                graph[doc_id] = []
+
+        N = len(graph)
+        pr = {doc_id: 1.0 / N for doc_id in graph} # Initialize PageRank values
+
+        for iteration in range(max_iter): 
+            new_pr = {doc_id: (1.0 - damping) / N for doc_id in graph}
+            for doc_id in graph: 
+                outlinks = graph[doc_id]
+                if outlinks: 
+                    share = pr[doc_id] / len(outlinks)
+                    for dest in outlinks: 
+                        new_pr[dest] += damping * share
+
+                else: 
+                    # Distribute dangling page rank equally
+                    for dest in new_pr: 
+                        new_pr[dest] += damping * (pr[doc_id] / N)
+
+            diff = sum(abs(new_pr[doc_id] - pr[doc_id]) for doc_id in pr)
+            pr = new_pr
+            if diff < convergence_threshold: 
+                self.logger.info(f"PageRank converged after {iteration +  1} iterations")
+                break
+        write_json_file(PAGERANK_FILE, pr, self.logger)
+        self.logger.info(f"PageRank scores saved to: {PAGERANK_FILE}")
+        
+    def __process_document(self, file_path: str, doc_id: int) -> None:
+        """
+        Takes a file path to a document which stores an html page and updates the inverted index with tokens extracted from text content.
+        Reads the file from disk. Extracts the html content. Updates the doc_id-url map. Tokenize the textual content.
+        Update the inverted index with
+
+        Parameters:
+            file_path (str): The absolute file path to the document in the local file storage system
+            doc_id (int): The unique id for the document at the provided file location 
+        """
+
+        # Read json file from disk
+        data = read_json_file(file_path, self.logger)
         if not data:
             self.logger.warning(f"Skipping empty JSON file: {file_path}")
             return
         
+        # Extract url and check that is valid
         url = clean_url(data['url'])
         if is_non_html_extension(url):
-            self.logger.warning(f"Skipping url with non html extension")
-            return
-        # if not is_unique_url(url):
-        #     self.logger.warning(f"Skipping non-unique Url: {os.path.join(root, file)} - {url}")
-        #     return
-
-        text = self.__extract_text_from_html_content(data['content'])
-        if not text: 
-            self.logger.warning(f"Skipping empty HTML text content: {file_path}")
+            self.logger.warning(f"Skipping url with non html extension - {url}")
             return
 
+        content = data['content']
+
+        if not content: 
+            self.logger.warning(f"Skipping doc {doc_id}: empty content - {url}")
+            return
+        if is_xml(content):
+            self.logger.warning(f"Skipping doc {doc_id}: content is XML - {url}")
+            return
+
+        # Extract hyperlinks to build the document graph
+        self.link_graph[doc_id] = self.__extract_hyperlinks(content, url)
+
+        # Extract tokens from html content
+        tokens_with_freq_and_weight = self.__extract_content_structure(content)
+        tokens = tokens_with_freq_and_weight.keys()
+
+        # Check for near and exact duplicate content (Simhash); Simhash also covers exact duplicate which has dist == 0
+        current_page_hash = simhash.compute_simhash(tokens)
+        for visited_page_hash in self.visited_content_simhashes:
+            dist = simhash.calculate_hash_distance(current_page_hash, visited_page_hash)
+            if dist == 0:  # Exact-duplicate
+                self.logger.warning(f"Skipping doc {doc_id}: Exact Duplicate Content Match with Dist={dist} - {url}")
+                return []
+            elif dist < simhash.THRESHOLD:  # Near-duplicate
+                self.logger.warning(f"Skipping doc {doc_id}: Near Duplicate Content Match with Dist={dist} - {url}")
+                return []
+        self.visited_content_simhashes.add(current_page_hash)
+
+        # Update doc id map
         self.__update_doc_id_map(doc_id, url)
+        self.__update_doc_lengths(doc_id, len(tokens))
 
-        # self.logger.info(f"Tokenizing document content")
-        tokens = InvertedIndex.__stem_tokens(InvertedIndex.__tokenize_text(text))
-        token_freq = InvertedIndex.__construct_token_freq_counter(tokens)
+        # Update the inverted index with document tokens
+        alphanumerical_indexes_modified = set() # Track which partial indexes are being updated this document
+        for token, (freq, structural_weight) in tokens_with_freq_and_weight.items():
+            tf = InvertedIndex.__compute_tf(freq, len(tokens))
 
-        # self.logger.info(f"Updating inverted index")
-        for token, freq in token_freq.items(): 
-            self.index[token].append((doc_id, freq))
+            # Append token to alphanumerical_index
+            # Only process tokens that are alphanumerical
+            if (token[0].lower().isalnum() and token[0].lower().isascii()):
+                first_char = token[0].lower()
+                self.alphanumerical_index[first_char][token].append((doc_id, freq, tf, structural_weight))
 
-        self.doc_count += 1
-        # self.total_doc_count += 1
+                # Track # of documents counted per alphanumerical character
+                alphanumerical_indexes_modified.add(first_char)
+        
+        self.__dump_to_disk(alphanumerical_indexes_modified)
 
-        # If threshould reached, store partial index and reset RAM
-        if self.doc_count >= DOC_THRESHOLD: 
-            self.__dump_to_disk()
+        self.total_doc_indexed += 1 
 
-    def __update_doc_id_map(self, doc_id, url): 
+    def __update_doc_id_map(self, doc_id: int, url: str) -> None:
+        """
+        Updates the document id-url index with the provided doc_id url pair.
+        Document id-url index records which url is associated with each doc_id number
+
+        Parameters:
+            doc_id (int): the unique identifier of the document
+            url (str): url web address of the related document
+        """
+
         self.doc_id_map[doc_id] = url
 
-    def __save_doc_id_map_to_disk(self): 
-        """Saves the Doc_ID-URL mapping to disk as a JSON file"""
-        if os.path.exists(DOC_ID_MAP_FILE):
-            with open(DOC_ID_MAP_FILE, "r", encoding="utf-8") as f: 
-                existing_map = json.load(f)
-        else: 
-            existing_map = {}
-
-        for key, value in self.doc_id_map.items(): 
-            existing_map[key] = value
-        
-        # write index to file
-        with open(DOC_ID_MAP_FILE, "w", encoding="utf-8") as f:
-            json.dump(existing_map, f, indent=4)
-
-    def __save_index_to_disk(self): 
-        """Store current index to JSON file"""
-        self.logger.info("Dumping index to disk")
-        
-        # Create a new .json partial index file
-        index_file = os.path.join(PARTIAL_INDEX_DIR, f"index_part_{len(os.listdir(PARTIAL_INDEX_DIR))}.json")
-
-        # check if .json partial index file already existing index
-        if os.path.exists(index_file):
-            with open(index_file, "r", encoding="utf-8") as f: 
-                existing_data = json.load(f)
-        else: 
-            existing_data = {}
-
-        # Merge exisiting index with new data from in memory index
-        for token, postings in self.index.items(): 
-            if token in existing_data: 
-                existing_data[token].extend(postings)
-            else: 
-                existing_data[token] = postings
-
-        # write index to file
-        with open(index_file, "w", encoding="utf-8") as f:
-            json.dump(existing_data, f, indent=4)
-
-    def __dump_to_disk(self): 
+    def __update_doc_lengths(self, doc_id: int, doc_length: int) -> None: 
         """
-        Saves in memory partial inverted index and doc_id map to
-        disk, then clears memory. 
+        
         """
-        self.__save_index_to_disk()
-        self.__save_doc_id_map_to_disk()
-        self.index.clear()
-        self.doc_id_map.clear()
-        self.doc_count = 0 
+        self.doc_lengths_sum += doc_length
+        self.doc_lengths[doc_id] = doc_length
+
+    def __save_meta_data_to_disk(self) -> None: 
+        """
+        Saves meta data about the inverted index to disk to be read back when preforming query
+        """
+        total_length = self.doc_lengths_sum
+        num_docs = self.total_doc_indexed
+        doc_length_avg = total_length / num_docs if num_docs > 0 else 0.0
+
+        meta_data = {
+            "avg_doc_length": doc_length_avg,
+            "corpus_size" : self.doc_id,
+            "total_doc_indexed": self.total_doc_indexed,
+        }
+        write_json_file(META_DATA_FILE, meta_data, self.logger)
+
+    def __save_doc_id_map_to_disk(self) -> None: 
+        """
+        Saves the Doc_ID-URL mapping to disk as a JSON file
+        """
+        write_json_file(DOC_ID_MAP_FILE, self.doc_id_map, self.logger)
+
+    def __save_doc_lengths_to_disk(self) -> None: 
+        """
+        Saves the Doc_ID-URL mapping to disk as a JSON file
+        """
+        write_json_file(DOC_LENGTH_FILE, self.doc_lengths, self.logger)
+
+    def __save_link_graph(self) -> None: 
+        """
+        """
+        write_json_file(LINKGRAPH_FILE, self.link_graph, self.logger)
+
+    def __save_index_to_disk(self, partial_index_char: str) -> None: 
+        """
+        Store the current in-memory partial index to a .pkl file
+        """
+        self.logger.info(f"Saving '{partial_index_char}' index to disk...")
+        
+        # Create a new .txt partial index file
+        filepath = os.path.join(PARTIAL_INDEX_DIR, partial_index_char)
+        index_file = os.path.join(filepath, f"index_part_{self.alphanumerical_counts[partial_index_char].indexNum}.pkl")
+        write_pickle_file(index_file, self.alphanumerical_index[partial_index_char], self.logger)
+            
+        def save_token_to_file_map_disk() -> None: 
+            # Update token-to-file mapping
+            token_to_file_path = os.path.join(TOKEN_TO_FILE_MAP_DIR, f"token_to_file_map_{partial_index_char}.pkl")
+            
+            char_token_to_file_map = defaultdict(list)
+            if os.path.exists(token_to_file_path): 
+                char_token_to_file_map = read_pickle_file(token_to_file_path, self.logger)
+
+            for token in self.alphanumerical_index[partial_index_char]:
+                char_token_to_file_map[token].append(index_file)
+            write_pickle_file(token_to_file_path, char_token_to_file_map, self.logger, True)
+
+        save_token_to_file_map_disk()
+
+    def __dump_to_disk(self, alphanumerical_indexes_modified: set, override: bool = False) -> None:
+        """
+        Saves partial inverted index and doc_id map to
+        disk, then clears them from memory.
+        """
+
+        is_disk_index_updated = False
+        # Note which partial indexes were updated and dump if necessary
+        for char_modified in alphanumerical_indexes_modified:
+            # Get the existing tuple of counts, initialize (0, 0) if none
+            currentIndexCounter = self.alphanumerical_counts.get(char_modified, IndexCounter(docCount = 0, indexNum = 0))
+
+            # Increment number of documents stored per character
+            currentIndexCounter = IndexCounter(docCount = currentIndexCounter.docCount + 1, indexNum=currentIndexCounter.indexNum)
+            self.alphanumerical_counts[char_modified] = currentIndexCounter
+
+            # Dump partial index if it exceeds PARTIAL_INDEX_DOC_THRESHOLD
+            if override or self.alphanumerical_counts[char_modified].docCount % DOC_THRESHOLD_COUNT == 0:
+              if override or (asizeof(self.alphanumerical_index[char_modified]) / 1024) >= PARTIAL_INDEX_SIZE_THRESHOLD_KB:  # Compare in KB
+                  is_disk_index_updated = True
+                  self.__save_index_to_disk(char_modified)
+
+                  # Reset count
+                  currentIndexCounter = IndexCounter(docCount = 0, indexNum = currentIndexCounter.indexNum + 1)
+                  self.alphanumerical_counts[char_modified] = currentIndexCounter
+
+                  # Reset the partial index within memory
+                  self.alphanumerical_index[char_modified].clear()
+        
+        if is_disk_index_updated: 
+            # Update the doc_id map if index on disk is updated
+            self.__save_doc_id_map_to_disk()
+            self.doc_id_map.clear()
+            self.__save_doc_lengths_to_disk()
+            self.doc_lengths.clear()
+            self.__save_link_graph()
+            self.link_graph.clear()
+
         gc.collect()
-
-    def __merge_from_disk(self, query_tokens):
-        """Loads only relevant part of index from disk for a given query."""
-        merged_index = {}
-        for file_name in os.listdir(PARTIAL_INDEX_DIR): 
-            file_path = os.path.join(PARTIAL_INDEX_DIR, file_name)
-            with open(file_path, "r", encoding="utf-8") as f: 
-                index_part = json.load(f)
-
-            for token in query_tokens: 
-                if token in index_part: 
-                    if token in merged_index: 
-                        merged_index[token].extend(index_part[token])
-                    else: 
-                        merged_index[token] = index_part[token]
-
-        return merged_index
-
-    def __construct_token_freq_counter(tokens) -> Counter:
-        counter = Counter()
-        counter.update(tokens)
-        return counter
-
-    def __lemmatize_tokens(tokens: list[str]) -> list[str]:
-        return [lemmatizer.lemmatize(token) for token in tokens]
-
-    def __stem_tokens(tokens: list[str]) -> list[str]:
-        """Apply porters stemmer to tokens"""
-        return [stemmer.stem(token) for token in tokens]
-
-    def __tokenize_text(text: str) -> list[str]:
-        """Use nltk to tokenize text. Remove stop words and non alphanum"""
-        tokens =  word_tokenize(text)
-        return [token for token in tokens if re.match(r"^[a-zA-Z0-9]+$", token) and token not in STOPWORDS]
-        # return tokenizer.tokenize(text)
-
-    def __extract_text_from_html_content(self, content: str) -> list[str]: 
+        
+    def __extract_hyperlinks(self, content: str, base_url: str) -> list[str]: 
         """
         """
         try:
-            #TODO: Check that the content is html before parsing. Document content may also be xml
+            soup = BeautifulSoup(content, 'html.parser')
+            hyperlinks = []
+            for a in soup.find_all('a', href=True):
+                link = a['href']
+                if link.strip() == "": 
+                    continue
 
+                if base_url:
+                    link = urljoin(base_url, link)
+
+                parsed = urlparse(link)
+                if parsed.scheme in ('http', 'https') and parsed.netloc:
+                    cleaned_href = clean_url(link)
+                    hyperlinks.append(cleaned_href)
+
+            return list(set(hyperlinks))
+        except Exception as e: 
+            self.logger.error(f"Extacting hyperlinks failed: {e}")
+            return []
+
+    def __extract_content_structure(self, content: str, weigh_factor: int = 2) -> dict[int, tuple[int,float]]: 
+        """
+        Extract tokens from HTML content and applies extra wieght to tokens that 
+        appear in important HTML tags (titles, h1, h2, h3, and strong). 
+
+        Parameters:
+            text (str): html content
+            weight_factor (int): how much importance to assign tags
+
+        Returns:
+            dict[int, tuple[int,float]]: A combined list of tokens. Toeksn from important sections are replicated 
+        """
+
+        try:
             # Get the text from the html response
             soup = BeautifulSoup(content, 'html.parser')
 
             # Remove the text of CSS, JS, metadata, alter for JS, embeded websites
-            for markup in soup.find_all(["style", "script", "meta", "noscript", "iframe"]):  
-                markup.decompose()  # remove all markups stated above
+            for tag in soup.find_all(["style", "script", "meta", "noscript", "iframe"]):  
+                tag.decompose()  # remove all markups stated above
             
             # soup contains only human-readable texts now to be compared near-duplicate
-            text = soup.get_text(separator=" ", strip=True)
-            return text
+            general_text = soup.get_text(separator=" ", strip=True)
+            general_tokens = tokenize_text(general_text.lower())
+            general_tokens = stem_tokens(general_tokens)  # Apply stemming
+
+            token_counts = defaultdict(int)
+            structural_weights = defaultdict(lambda: 1.0)
+
+            # Count all tokens in the main body.
+            for token in general_tokens:
+                token_counts[token] += 1
+
+            # Increase weight for tokens in the title.
+            if soup.title:
+                title_text = soup.title.get_text()
+                title_tokens = tokenize_text(title_text)
+                title_tokens = stem_tokens(title_text)
+                for token in title_tokens:
+                    structural_weights[token] += 1.0  # bonus for title
+
+            # Increase weight for tokens in header tags.
+            for header in soup.find_all(['h1', 'h2', 'h3']):
+                header_text = header.get_text()
+                header_tokens = tokenize_text(header_text)
+                header_tokens = stem_tokens(header_text)
+                for token in header_tokens:
+                    structural_weights[token] += 0.75  # bonus for headers
+            
+            # Increase weight for tokens in bold text.
+            for bold in soup.find_all(['b', 'strong']):
+                bold_text = bold.get_text()
+                bold_tokens = tokenize_text(bold_text)
+                bold_tokens = stem_tokens(bold_text)
+                for token in bold_tokens:
+                    structural_weights[token] += 0.5  # bonus for bold text
+
+            # Combine counts and structural weights.
+            tokens_structural_weights = {}
+            for token in token_counts:
+                tokens_structural_weights[token] = (token_counts[token], structural_weights[token])
+            
+            return tokens_structural_weights
         except Exception as e:
             self.logger.error(f"An unexpected error has orccurred: {e}") 
-            return None 
-    
-    def __read_json_file(self, file_path: str) -> dict[str, str]:
+            return None
+
+    def __read_partial_index_from_disk(self, file_path: str) -> dict:
         """
+        Reads/deserializes partial inverted index from file
+        [LINE FORMAT] token;docid1,freq1,tf1 docid2,freq2,tf2 docid3,freq3,tf3\n
+
+        Parameters: 
+            file_path (str): A file path to a partial index serialized in a .txt file 
+
+        Returns:
+            dict:
+
         """
-        try: 
-            with open(file_path, 'r') as file: 
-                data = json.load(file)
-                # self.logger.info(f"Success: Load JSON file: {file_path}")
-                return data
-        except FileNotFoundError:
-            self.logger.error(f"File note found at path: {file_path}")
-            return None 
-        except json.JSONDecodeError: 
-            self.logger.error(f"Invalid JSON format in file:  {file_path}")
-            return None 
-        except Exception as e:
-            self.logger.error(f"An unexpected error has orccurred: {e}") 
-            return None 
+        return read_pickle_file(file_path, self.logger)
+
+    # Non-member functions
+    @staticmethod
+    def __compute_tf(term_freq: int, doc_length: int)->float: 
+        return term_freq / doc_length

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Search Engine</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+      body { 
+        font-family: Arial, sans-serif; margin: 
+        20px; 
+      }
+      .results li { 
+        margin: 10px 0;
+        padding: 10px;
+        border: 1px solid #ccc; /* Thin border around each list element */
+        border-radius: 4px;
+    }
+      .results li a{ 
+        font-weight: bold;
+        margin: 10px 0;
+      }
+      .loading { 
+        display: none;
+      }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="mt-4">CS121 Search Engine</h1>
+        <form id="searchForm" method="POST">
+            <div class="form-group">
+                <input type="text" class="form-control" name="query" placeholder="Enter your query" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Search</button>
+        </form>
+        <div id="loadingIndicator" class="loading mt-3">
+            <span>Loading...</span>
+        </div>
+        {% if top_results %}
+          <h2 class="mt-4">Top Results:</h2>
+          <p class="mt-4">Found {{ results_count }} results in {{ delta_time }} ms</p>
+          <ul class="results list-unstyled">
+            {% for url in top_results[:10] %}
+              <li><a href="{{ url }}" target="_blank">{{ url }}</a></li>
+            {% endfor %}
+          </ul>
+        {% elif request.method == 'POST' %}
+          <p class="mt-4">No results found. Please try a different query.</p>
+        {% endif %}
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script>
+      // Simple example to show loading indicator during form submission
+      $('#searchForm').on('submit', function() {
+          $('#loadingIndicator').show();
+      });
+    </script>
+</body>
+</html>

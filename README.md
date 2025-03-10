@@ -31,35 +31,52 @@ $ ```deactivate```
   - settings.json - Configures unittesting setttings
   
   launch.json
-  ``` 
+``` 
 {
     // Use IntelliSense to learn about possible attributes.
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-
         {
-            "name": "Python Debug: main.py with restart arg",
+            "name": "Python Debug: main.py",
             "type": "debugpy",
             "request": "launch",
-            "program": "main.py",
+            "program": "ma${extensionInstallFolder:publisher.extension}.py",
+            "console": "integratedTerminal",
+            "args": []
+        },
+        {
+            "name": "Python Debug: build_index.py full corpus",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "build_index.py",
             "console": "integratedTerminal",
             "args": [
-                "--rootdir", "developer/DEV", "--restart"
+                "--rootdir", "dev/corpus"
             ]
         },
         {
-            "name": "Python Debug: summary_report.py",
+            "name": "Python Debug: build_index.py small corpus",
             "type": "debugpy",
             "request": "launch",
-            "program": "summary_report.py",
+            "program": "build_index.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--rootdir", "dev/small_corpus"
+            ]
+        },
+        {
+            "name": "Python Debug: summary.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "summary.py",
             "console": "integratedTerminal",
             "args": []
         }
     ]
 }
-  ```
+```
 
 settings.json
 ```
@@ -79,7 +96,23 @@ settings.json
 ### Verify the Environment
 $ ```which python```
 
+### Setup
+$ ```python setup.py```
 
-## M1: Inverse Index
+Downloads required nltk resources. Run setup.py once before building index or entering search query
+
+### Building Index
+$ ```python build_index.py --rootdir <file_path>```
+
+Builds the inverted index. If the index is not already built run build_index.py. Script only needs to
+
+optional arguments:
+--rootdir <file_path> : File path to document corpus directory
+
+### Running Search Engine and Entering a Query
+$ ```python -m flask run```
+
+Visit site
+http://127.0.0.1:5000
 
 

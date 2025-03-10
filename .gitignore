@@ -1,6 +1,10 @@
 __pycache__/
-developer/
+corpus/
 logs/
 index/
 .venv/
 .vscode/
+TODO.txt
+developer/
+DEV_test/
+dev/
