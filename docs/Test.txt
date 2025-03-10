@@ -1,25 +1,37 @@
+Milestone 2 queries
+--------------------
 cristina lopes
 machine learning
 ACM
 master of software engineering
 
-uci graphics
-graduate learning
-software engineering technology
-algorithm and data structure
-Women in Computer Science
-ICS academic advising
-Bachelors of Science in Informatics
-Computer visision and machine learning at uci
-ICS 6D tutoring help
-University of California Irvine student council
-School of Information and Computer Science uci
-Hackathons at UCI 2024
-Computer science professors directory
-UCI machine learning research
-ICS school alumni 
-Honors program at UCi schol of ICS
-Donald Bren School of Information and Computer Sciences Clubs and organizations 
-Hacks at UCI events
-Donald Bren School of Information and Computer Sciences Admissions
-Undergraduate Research Opportunities Program (UROP) at UCI
+Test queries
+--------------------------
+Good Preformance:
+
+    uci graphics
+    graduate learning
+    software engineering 
+    algorithm and data structure
+    Women in cs
+    academic advising
+    Bachelors of Science in Informatics
+    Hackathons at UCI 2024
+    Hacks at UCI events
+    Undergraduate Research Opportunities Program 
+
+Poor Preformance:
+    ICS 6D tutoring help
+    student council
+    CS professors
+    UCI machine learning research
+    UCI ICS alumni 
+    Honors program at UCi ICS
+    UC Irvine Clubs
+    Donald Bren Admissions
+    Computer vision and ml uci
+
+Our initial query ranking was a simple boolean comparison. It returned all pages that contained all the query tokens. Next, for milestone 3 we implemented a simple TF-IDF, without consideration of importance weighting for tokens that appeared in titles or headings. 
+We then implemented a simple importance weighting system that simply added more tokens for words that appeared in headings and titles. For instance if a token appeared in a title 2 tokens would be appended to the token list. We then implemented a more sophisticated importance weighting scheme. We added a weight score to the posting. The weight score is calculated by adding a 1.0 for title tokens 0.75 for header tokens and 0.5 for bold/strong tokens. Next, we implemented the bm25 ranking algorithm which allows more control in weighting token frequency and document length. Finally, we added pagerank to score the pages based on their connectedness by links.
+
+

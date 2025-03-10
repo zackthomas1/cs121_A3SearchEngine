@@ -124,7 +124,7 @@ class InvertedIndex:
         for token in query_tokens:
             if token in token_to_file_map:
                 file_list = token_to_file_map[token]
-                self.logger.info(f"'{token}' found in {len(file_list)} file/s")
+                # self.logger.info(f"'{token}' found in {len(file_list)} file/s")
                 for file_path in file_list:
                     # Read in partial index from file
                     partial_index = self.__read_partial_index_from_disk(file_path)
@@ -247,7 +247,7 @@ class InvertedIndex:
         write_json_file(DOC_NORMS_FILE, doc_norms, self.logger)
         self.logger.info(f"Document norms saved to: {DOC_NORMS_FILE}")
 
-    def compute_page_rank(self, damping: float = 0.85, max_iter: int = 50, convergence_threshold: float = 1.0e-4) -> dict:
+    def compute_page_rank(self, damping: float = 0.85, max_iter: int = 5, convergence_threshold: float = 1.0e-3) -> dict:
         """
         Parameters
             damping (float): probability that a user will continue following links from a page rather than jumping to a random page
@@ -276,7 +276,8 @@ class InvertedIndex:
         N = len(graph)
         pr = {doc_id: 1.0 / N for doc_id in graph} # Initialize PageRank values
 
-        for iteration in range(max_iter): 
+        for iteration in range(max_iter):
+            self.logger.info(f"\tIteration {iteration}")
             new_pr = {doc_id: (1.0 - damping) / N for doc_id in graph}
             for doc_id in graph: 
                 outlinks = graph[doc_id]
