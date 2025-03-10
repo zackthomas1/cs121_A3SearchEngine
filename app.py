@@ -33,7 +33,7 @@ def index():
             query_tokens = process_query(query)
             # ranked_results = ranked_search_cosine_similarity(query_tokens, inverted_index, total_docs, doc_norms, token_to_file_map)
             ranked_results = ranked_search_bm25(query_tokens, inverted_index, total_docs, avg_doc_length, doc_lengths, token_to_file_map)
-            # ranked_results = add_page_rank(ranked_results, page_rank_scores)
+            ranked_results = add_page_rank(ranked_results, page_rank_scores)
             end_time = time.perf_counter() * 1000
 
             # 
