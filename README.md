@@ -5,7 +5,7 @@
 - Follow link to download zip file containing data set of ics.uci.edu pages:
 https://www.ics.uci.edu/~algol/teaching/informatics141cs121w2022/a3files/developer.zip
 
-- Once downloaded extract files and place 'dev' folder into root project director
+- Once downloaded extract files and place root corpus folder at the relative directory 'dev/corpus'to root project director
 
 ### Initialize Virtual Environment 
 Creates lightweight python environment to manage project dependecies
