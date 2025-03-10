@@ -12,6 +12,8 @@ from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 from nltk.corpus import stopwords
 
+
+
 #
 lemmatizer = WordNetLemmatizer()
 stemmer = PorterStemmer()
@@ -227,3 +229,17 @@ def is_xml(content: str) -> bool:
 
     stripped_content = content.lstrip().lower() 
     return  stripped_content.startswith("<?xml") or stripped_content.startswith("<xml")
+
+
+def generate_ngrams(tokens: list[str], n: int) -> list[tuple]:
+    """
+    Generates n-grams from a list of tokens.
+    
+    Parameters:
+        tokens (list[str]): A list of tokens to generate n-grams from.
+        n (int): The size of the n-grams to generate.
+        
+    Returns:
+        list[tuple]: A list of n-grams (each n-gram is a tuple of tokens).
+    """
+    return [tuple(tokens[i:i+n]) for i in range(len(tokens) - n + 1)]

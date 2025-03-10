@@ -5,7 +5,9 @@ import simhash
 import pickle
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
-from utils import clean_url, compute_tf_idf, get_logger, read_pickle_file, write_pickle_file, read_json_file, write_json_file, tokenize_text, is_non_html_extension, is_xml
+from utils import (clean_url, compute_tf_idf, get_logger, read_pickle_file,
+                   write_pickle_file, read_json_file, write_json_file, tokenize_text,
+                   is_non_html_extension, is_xml, generate_ngrams)
 from datastructures import IndexCounter
 from pympler.asizeof import asizeof
 
@@ -13,9 +15,9 @@ from pympler.asizeof import asizeof
 PARTIAL_INDEX_SIZE_THRESHOLD_KB = 9000  # set threshold to 20000 KB (margin of error: 5000 KB)
 DOC_THRESHOLD_COUNT = 125
 
-MASTER_INDEX_DIR        = "index/master_index"  # "index/master_index"
-META_DIR                = "index/meta_data"    # "index/doc_id_map"
-PARTIAL_INDEX_DIR       = "index/partial_index" # "index/partial_index"
+MASTER_INDEX_DIR        = "index/master_index"   # "index/master_index"
+META_DIR                = "index/meta_data"        # "index/doc_id_map"
+PARTIAL_INDEX_DIR       = "index/partial_index"    # "index/partial_index"
 TOKEN_TO_FILE_MAP_DIR   = "index/meta_data/token_to_file_map"
 
 DOC_ID_MAP_FILE     = os.path.join(META_DIR, "doc_id_map.json")
@@ -24,406 +26,342 @@ DOC_NORMS_FILE      = os.path.join(META_DIR, "doc_norms.json")
 MASTER_INDEX_FILE   = os.path.join(MASTER_INDEX_DIR, "master_index.json")
 META_DATA_FILE      = os.path.join(META_DIR, "meta_data.json")
 
-class InvertedIndex: 
+
+class InvertedIndex:
     def __init__(self):
-        """ 
-        Prepares to Index data by initializing storage directories and counter/keying variables.
-        """
-        # Note, modify the Tuple[] in the case you want to add more attributes to the posting
-        self.alphanumerical_index: dict[str, dict[str, list[tuple[int, int, float]]]] = defaultdict(lambda: defaultdict(list)) # {letter/num: {token: [(docid, freq, tf_score)]}}
-        self.alphanumerical_counts: dict[str, IndexCounter] = dict() # {letter/num: [number of current documents, current partial index num]}
+        """Prepares to index data by initializing storage directories and counter/keying variables."""
+        # The inverted index: {letter/num: {token: [(doc_id, freq, tf, structural_weight)]}}
+        self.alphanumerical_index: dict[str, dict[str, list[tuple[int, int, float, float]]]] = defaultdict(lambda: defaultdict(list))
+        self.alphanumerical_counts: dict[str, IndexCounter] = dict()
         
-        self.doc_id_map = defaultdict(str) # {doc_id: url}
+        self.doc_id_map = defaultdict(str)
         self.doc_lengths = defaultdict()
         self.visited_content_simhashes = set()
 
         self.doc_id = 0
-        self.doc_count_partial_index = 0    # Rerset to zero every time a partial index is created
-        self.total_doc_indexed = 0  # Tracks the number of documents successfully processed/indexed (not skipped).
+        self.doc_count_partial_index = 0
+        self.total_doc_indexed = 0
 
         self.logger = get_logger("INVERTED_INDEX")
 
-        # Initializes directories for index storage
         os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
-        os.makedirs(META_DIR, exist_ok=True) 
+        os.makedirs(META_DIR, exist_ok=True)
         os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
-        os.makedirs(TOKEN_TO_FILE_MAP_DIR, exist_ok=True) 
+        os.makedirs(TOKEN_TO_FILE_MAP_DIR, exist_ok=True)
 
-        # Initializes directories a-z within the partial index
         for letter_ascii in range(ord('a'), ord('z') + 1):
-            os.makedirs(PARTIAL_INDEX_DIR + '/' + chr(letter_ascii), exist_ok=True)
-
-        # Initializes directories 0-9 within the partial index
+            os.makedirs(os.path.join(PARTIAL_INDEX_DIR, chr(letter_ascii)), exist_ok=True)
         for num in range(10):
-            os.makedirs(PARTIAL_INDEX_DIR + '/' + str(num), exist_ok=True)
+            os.makedirs(os.path.join(PARTIAL_INDEX_DIR, str(num)), exist_ok=True)
 
-    def build_index(self, corpus_dir: str) -> None: 
+    def build_index(self, corpus_dir: str) -> None:
         """
-        Process all JSON files in folder and build index.
+        Process all JSON files in a folder and build the index.
         """
         for root, dirs, files in os.walk(corpus_dir):
             for file_name in files:
                 self.logger.info(f"Indexing doc: {self.doc_id}")
                 if file_name.endswith(".json"):
+                    # Call the private method __process_document
                     self.__process_document(os.path.join(root, file_name), self.doc_id)
                 else:
-                    self.logger.warning(f"File not does not end with .json extention: {file_name}")
-                
-                # Update counters
+                    self.logger.warning(f"File does not end with .json extension: {file_name}")
                 self.doc_id += 1
-                
-        # Dump any remaining tokens to disk
-        alphanumerical_indexes_modified = [alphanum_char for alphanum_char, partial_index in self.alphanumerical_index.items() if partial_index]
-        self.__dump_to_disk(set(alphanumerical_indexes_modified), override=True)
 
-        # Save index meta data disk
+        # Dump any remaining tokens to disk
+        alphanumerical_indexes_modified = [
+            char for char, index in self.alphanumerical_index.items() if index
+        ]
+        self.__dump_to_disk(set(alphanumerical_indexes_modified), override=True)
         self.__save_meta_data_to_disk()
 
     def build_master_index(self) -> None:
         """
         Combines all partial indexes into a single master index while preserving order.
         """
-
         master_index = defaultdict(list)
-
-        self.logger.info(f"Building Master index...")
-
-        # Iterate through all partial index files
-        for dir_name in sorted(os.listdir(PARTIAL_INDEX_DIR)):  # Ensure order is maintained
+        self.logger.info("Building Master index...")
+        # Iterate only over .pkl files in each subdirectory
+        for dir_name in sorted(os.listdir(PARTIAL_INDEX_DIR)):
             dir_path = os.path.join(PARTIAL_INDEX_DIR, dir_name)
             for file_name in os.listdir(dir_path):
+                if not file_name.endswith(".pkl"):
+                    continue  # Skip non-pkl files
                 file_path = os.path.join(dir_path, file_name)
                 self.logger.info(f"Adding: {file_path}")
-
                 partial_index = self.__read_partial_index_from_disk(file_path)
-
-                # Merge token postings while maintaining order
                 for token, postings in partial_index.items():
                     master_index[token].extend(postings)
-
         write_json_file(MASTER_INDEX_FILE, master_index, self.logger)
-    
+
     def construct_merged_index_from_disk(self, query_tokens: list[str], token_to_file_map: dict) -> dict:
         """
-        Constructs inverted index containing only query tokens from partial inverted index stored on disk
-        
-        Parameters:
-            query_tokens (list[str]): 
-
-        Returns:
-            dict: inverted index which contains only the query tokens entries from the partial index
+        Constructs an inverted index containing only query tokens from partial indexes stored on disk.
         """
-
         merged_index = {}
-
         for token in query_tokens:
             if token in token_to_file_map:
-                    file_list = token_to_file_map[token]
-                    self.logger.info(f"'{token}' found in {len(file_list)} file/s")
-                    for file_path in file_list:
-                        # Read in partial index from file
-                        partial_index = self.__read_partial_index_from_disk(file_path)
-
-                        # Search for token in partial index and add found query tokens to merged_index
-                        if token in partial_index: 
-                            if token in merged_index: 
-                                merged_index[token].extend(partial_index[token])
-                            else: 
-                                merged_index[token] = partial_index[token]
-
+                file_list = token_to_file_map[token]
+                self.logger.info(f"'{token}' found in {len(file_list)} file(s)")
+                for file_path in file_list:
+                    if not file_path.endswith(".pkl"):
+                        continue
+                    partial_index = self.__read_partial_index_from_disk(file_path)
+                    if token in partial_index:
+                        if token in merged_index:
+                            merged_index[token].extend(partial_index[token])
+                        else:
+                            merged_index[token] = partial_index[token]
         return merged_index
 
     def load_doc_id_map_from_disk(self) -> dict:
-        """
-        Load the doc_id map from disk to get urls
-        Returns: 
-            dict: A dictionary mapping doc id numbers to url strings
-        """
         return read_json_file(DOC_ID_MAP_FILE, self.logger)
-    
+
     def load_doc_lengths_from_disk(self) -> dict:
-        """
-        Load the doc length map from disk
-        Returns: 
-            dict: A dictionary mapping doc id numbers to length of the document
-        """
         return read_json_file(DOC_LENGTH_FILE, self.logger)
 
     def load_doc_norms_from_disk(self) -> dict:
-        """
-        Loads the precomputed document norms from disk.
-        Returns:
-            dict: A dictionary mapping document IDs(int) to their norm values(float).
-        """
         doc_norms = read_json_file(DOC_NORMS_FILE, self.logger)
-        doc_norms = {int(key): float(value) for key, value in doc_norms.items()}
-        return doc_norms
+        return {int(key): float(value) for key, value in doc_norms.items()}
 
     def load_master_index_from_disk(self) -> dict:
-        """
-        Load master index from dist
-        Returns: 
-            dict: A dictionary mapping token(str) to postings(list[tuple[int, int, float])
-        """
         return read_json_file(MASTER_INDEX_FILE, self.logger)
 
     def load_meta_data_from_disk(self) -> dict:
-        """
-        Load index meta file from disk
-        
-        Returns: 
-            dict: A dictionary of inverted index meta data
-        """
         return read_json_file(META_DATA_FILE, self.logger)
-    
+
     def load_token_to_file_map_from_disk(self) -> dict:
-        """
-        Load token to file map from disk
-        Returns: 
-            dict: A dictionary mapping tokens(str) to files(str)
-        """
         token_to_file_map = defaultdict(list)
         for file_name in os.listdir(TOKEN_TO_FILE_MAP_DIR):
             file_path = os.path.join(TOKEN_TO_FILE_MAP_DIR, file_name)
             char_token_to_file_map = read_pickle_file(file_path, self.logger)
             for token, files in char_token_to_file_map.items():
                 token_to_file_map[token] = files
-
         return token_to_file_map
 
     def precompute_doc_norms(self) -> None:
         """
-        Precomputes the Euclidean norm of each document's vector using tf-idf weighting. 
-
-        The norm of a document is the squer root of the sum of squared tf-idf weights
-        of all the tokens which are in that document. 
-
-        Store precomputed norms in JSON file for look up at query time.
+        Precomputes the Euclidean norm of each document's vector using tf-idf weighting.
         """
-
         self.logger.info("Precomputing document normals...")
-
         total_docs = self.load_meta_data_from_disk()["total_doc_indexed"]
-        
+
         # Compute global document frequency for each token
         global_df = defaultdict(int)
         for subdir in os.listdir(PARTIAL_INDEX_DIR):
-            subdir_path = os.path.join(PARTIAL_INDEX_DIR, subdir)
-            for file_name in os.listdir(subdir_path):
-                file_path = os.path.join(subdir_path, file_name)
+            dir_path = os.path.join(PARTIAL_INDEX_DIR, subdir)
+            for file_name in os.listdir(dir_path):
+                if not file_name.endswith(".pkl"):
+                    continue
+                file_path = os.path.join(dir_path, file_name)
                 partial_index = self.__read_partial_index_from_disk(file_path)
                 for token, postings in partial_index.items():
                     global_df[token] += len(postings)
-
-        self.logger.info("Gloabl document frequencies computed.")
+        self.logger.info("Global document frequencies computed.")
 
         # Compute document norms using tf-idf weights
         doc_norms = defaultdict(float)
         for subdir in os.listdir(PARTIAL_INDEX_DIR):
-            subdir_path = os.path.join(PARTIAL_INDEX_DIR, subdir)
-            for file_name in os.listdir(subdir_path):
-                file_path = os.path.join(subdir_path, file_name)
+            dir_path = os.path.join(PARTIAL_INDEX_DIR, subdir)
+            for file_name in os.listdir(dir_path):
+                if not file_name.endswith(".pkl"):
+                    continue
+                file_path = os.path.join(dir_path, file_name)
                 partial_index = self.__read_partial_index_from_disk(file_path)
                 for token, postings in partial_index.items():
                     df = global_df[token]
-                    for doc_id, freq, tf in postings: 
+                    for doc_id, freq, tf, _ in postings:
                         weight = compute_tf_idf(tf, df, total_docs)
                         doc_norms[doc_id] += weight ** 2
-
-        # Take square root to compute Euclidean norm
-        for doc_id in doc_norms: 
+        for doc_id in doc_norms:
             doc_norms[doc_id] = math.sqrt(doc_norms[doc_id])
-
         write_json_file(DOC_NORMS_FILE, doc_norms, self.logger)
         self.logger.info(f"Document norms saved to: {DOC_NORMS_FILE}")
 
-  
     def __update_doc_id_map(self, doc_id: int, url: str) -> None:
-        """
-        Updates the document id-url index with the provided doc_id url pair.
-        Document id-url index records which url is associated with each doc_id number
-
-        Parameters:
-            doc_id (int): the unique identifier of the document
-            url (str): url web address of the related document
-        """
-
         self.doc_id_map[doc_id] = url
 
-    def __update_doc_lengths(self, doc_id: int, doc_length: int) -> None: 
-        """
-        
-        """
-        
+    def __update_doc_lengths(self, doc_id: int, doc_length: int) -> None:
         self.doc_lengths[doc_id] = doc_length
 
-    def __save_meta_data_to_disk(self) -> None: 
-        """
-        Saves meta data about the inverted index to disk to be read back when preforming query
-        """
+    def __save_meta_data_to_disk(self) -> None:
         total_length = sum(self.doc_lengths.values())
         num_docs = len(self.doc_lengths)
         doc_length_avg = total_length / num_docs if num_docs > 0 else 0.0
-
         meta_data = {
             "avg_doc_length": doc_length_avg,
-            "corpus_size" : self.doc_id,
+            "corpus_size": self.doc_id,
             "total_doc_indexed": self.total_doc_indexed,
         }
         write_json_file(META_DATA_FILE, meta_data, self.logger)
 
-    def __save_doc_id_map_to_disk(self) -> None: 
-        """
-        Saves the Doc_ID-URL mapping to disk as a JSON file
-        """
+    def __save_doc_id_map_to_disk(self) -> None:
         write_json_file(DOC_ID_MAP_FILE, self.doc_id_map, self.logger)
 
-    def __save_doc_lengths_to_disk(self) -> None: 
-        """
-        Saves the Doc_ID-URL mapping to disk as a JSON file
-        """
+    def __save_doc_lengths_to_disk(self) -> None:
         write_json_file(DOC_LENGTH_FILE, self.doc_lengths, self.logger)
 
-    def __save_index_to_disk(self, partial_index_char: str) -> None: 
-        """
-        Store the current in-memory partial index to a .pkl file
-        """
+    def __save_index_to_disk(self, partial_index_char: str) -> None:
         self.logger.info(f"Saving '{partial_index_char}' index to disk...")
-        
-        # Create a new .txt partial index file
-        filepath = PARTIAL_INDEX_DIR + '/' + partial_index_char
+        filepath = os.path.join(PARTIAL_INDEX_DIR, partial_index_char)
         index_file = os.path.join(filepath, f"index_part_{self.alphanumerical_counts[partial_index_char].indexNum}.pkl")
         write_pickle_file(index_file, self.alphanumerical_index[partial_index_char], self.logger)
-            
-        def save_token_to_file_map_disk() -> None: 
-            # Update token-to-file mapping
-            token_to_file_path = os.path.join(TOKEN_TO_FILE_MAP_DIR, f"token_to_file_map_{partial_index_char}.pkl")
-            
-            char_token_to_file_map = defaultdict(list)
-            if os.path.exists(token_to_file_path): 
-                char_token_to_file_map = read_pickle_file(token_to_file_path, self.logger)
 
+        def save_token_to_file_map_disk() -> None:
+            token_to_file_path = os.path.join(TOKEN_TO_FILE_MAP_DIR, f"token_to_file_map_{partial_index_char}.pkl")
+            char_token_to_file_map = defaultdict(list)
+            if os.path.exists(token_to_file_path):
+                char_token_to_file_map = read_pickle_file(token_to_file_path, self.logger)
             for token in self.alphanumerical_index[partial_index_char]:
                 char_token_to_file_map[token].append(index_file)
             write_pickle_file(token_to_file_path, char_token_to_file_map, self.logger, True)
-
         save_token_to_file_map_disk()
 
     def __dump_to_disk(self, alphanumerical_indexes_modified: set, override: bool = False) -> None:
-        """
-        Saves partial inverted index and doc_id map to
-        disk, then clears them from memory.
-        """
-
         is_disk_index_updated = False
-        # Note which partial indexes were updated and dump if necessary
         for char_modified in alphanumerical_indexes_modified:
-            # Get the existing tuple of counts, initialize (0, 0) if none
-            currentIndexCounter = self.alphanumerical_counts.get(char_modified, IndexCounter(docCount = 0, indexNum = 0))
-
-            # Increment number of documents stored per character
-            currentIndexCounter = IndexCounter(docCount = currentIndexCounter.docCount + 1, indexNum=currentIndexCounter.indexNum)
+            currentIndexCounter = self.alphanumerical_counts.get(char_modified, IndexCounter(docCount=0, indexNum=0))
+            currentIndexCounter = IndexCounter(docCount=currentIndexCounter.docCount + 1, indexNum=currentIndexCounter.indexNum)
             self.alphanumerical_counts[char_modified] = currentIndexCounter
-
-            # Dump partial index if it exceeds PARTIAL_INDEX_DOC_THRESHOLD
             if override or self.alphanumerical_counts[char_modified].docCount % DOC_THRESHOLD_COUNT == 0:
-              if override or (asizeof(self.alphanumerical_index[char_modified]) / 1024) >= PARTIAL_INDEX_SIZE_THRESHOLD_KB:  # Compare in KB
-                  is_disk_index_updated = True
-                  self.__save_index_to_disk(char_modified)
-
-                  # Reset count
-                  currentIndexCounter = IndexCounter(docCount = 0, indexNum = currentIndexCounter.indexNum + 1)
-                  self.alphanumerical_counts[char_modified] = currentIndexCounter
-
-                  # Reset the partial index within memory
-                  self.alphanumerical_index[char_modified].clear()
-        
-        if is_disk_index_updated: 
-            # Update the doc_id map if index on disk is updated
+                if override or (asizeof(self.alphanumerical_index[char_modified]) / 1024) >= PARTIAL_INDEX_SIZE_THRESHOLD_KB:
+                    is_disk_index_updated = True
+                    self.__save_index_to_disk(char_modified)
+                    currentIndexCounter = IndexCounter(docCount=0, indexNum=currentIndexCounter.indexNum + 1)
+                    self.alphanumerical_counts[char_modified] = currentIndexCounter
+                    self.alphanumerical_index[char_modified].clear()
+        if is_disk_index_updated:
             self.__save_doc_id_map_to_disk()
             self.doc_id_map.clear()
             self.__save_doc_lengths_to_disk()
             self.doc_lengths.clear()
-
         gc.collect()
 
-    def __extract_tokens_with_weighting(self, content: str, weigh_factor: int = 2) -> list[str]: 
+    def __extract_tokens_with_weighting(self, content: str, weigh_factor: int = 2) -> list[str]:
         """
-        Extract toekns from HTML content and applies extra wieght to tokens that 
-        appear in important HTML tags (titles, h1, h2, h3, and strong). 
-
+        Extract tokens from HTML content and apply extra weight to tokens that 
+        appear in important HTML tags (titles, h1, h2, h3, and strong). Additionally,
+        generates bigrams and trigrams from both the general text and the important text,
+        and combines them into a single list of tokens.
+        
         Parameters:
-            text (str): html content
-            weight_factor (int): how much importance to assign tags
-
+            content (str): HTML content.
+            weigh_factor (int): Multiplier for tokens extracted from important tags.
+        
         Returns:
-            list[str]: A combined list of tokens. Toeksn from important sections are replicated 
+            list[str]: Combined list of tokens (unigrams, bigrams, trigrams) ready for indexing.
         """
-
         try:
-            # Get the text from the html response
+            # Parse the HTML and remove unwanted tags
             soup = BeautifulSoup(content, 'html.parser')
-
-            # Remove the text of CSS, JS, metadata, alter for JS, embeded websites
-            for tag in soup.find_all(["style", "script", "meta", "noscript", "iframe"]):  
-                tag.decompose()  # remove all markups stated above
+            for tag in soup.find_all(["style", "script", "meta", "noscript", "iframe"]):
+                tag.decompose()
             
-            # soup contains only human-readable texts now to be compared near-duplicate
+            # --- Process general text ---
             general_text = soup.get_text(separator=" ", strip=True)
             general_tokens = tokenize_text(general_text)
-
-            # Extract important text from specific tags and tokenize 
+            
+            # Generate bigrams and trigrams for general tokens
+            bigrams = generate_ngrams(general_tokens, 2)
+            trigrams = generate_ngrams(general_tokens, 3)
+            bigram_strings = [' '.join(bigram) for bigram in bigrams]
+            trigram_strings = [' '.join(trigram) for trigram in trigrams]
+            
+            # --- Process important text ---
             important_tags = ["title", "h1", "h2", "h3", "strong"]
             important_text = ""
-            for tag in important_tags: 
-                for element in soup.find_all(tag): 
+            for tag in important_tags:
+                for element in soup.find_all(tag):
                     important_text += " " + element.get_text(separator=" ", strip=True)
-
             important_tokens = tokenize_text(important_text)
-
-            # Weight important tokens by replicating them
-            # Tokens from the important sections are multiplied by a weight factor. 
-            # This effectively increases their frequency count.
             
-            weighted_tokens = general_tokens + (important_tokens * weigh_factor)
-
+            # Generate n-grams for important tokens
+            important_bigrams = generate_ngrams(important_tokens, 2)
+            important_trigrams = generate_ngrams(important_tokens, 3)
+            important_bigram_strings = [' '.join(bigram) for bigram in important_bigrams]
+            important_trigram_strings = [' '.join(trigram) for trigram in important_trigrams]
+            
+            # --- Combine everything ---
+            weighted_tokens = (
+                general_tokens +
+                bigram_strings +
+                trigram_strings +
+                (important_tokens * weigh_factor) +
+                (important_bigram_strings * weigh_factor) +
+                (important_trigram_strings * weigh_factor)
+            )
+            
             return weighted_tokens
         except Exception as e:
-            self.logger.error(f"An unexpected error has orccurred: {e}") 
+            self.logger.error(f"An unexpected error occurred: {e}")
             return None
-    
+
     def __read_partial_index_from_disk(self, file_path: str) -> dict:
-        """
-        Reads/deserializes partial inverted index from file
-        [LINE FORMAT] token;docid1,freq1,tf1 docid2,freq2,tf2 docid3,freq3,tf3\n
-
-        Parameters: 
-            file_path (str): A file path to a partial index serialized in a .txt file 
-
-        Returns:
-            dict[str, list[tuple[int, int, float]]]:
-
-        """
         return read_pickle_file(file_path, self.logger)
 
-    # Non-member functions
     @staticmethod
-    def __compute_tf(term_freq: int, doc_length: int)->int: 
+    def __compute_tf(term_freq: int, doc_length: int) -> int:
         return term_freq / doc_length
-    
+
     @staticmethod
     def __construct_token_freq_counter(tokens: list[str]) -> Counter:
-        """
-        Counts the apparence frequency a token in a list of tokens from a single document
-        
-        Parameters:
-            tokens (list[str]): A list of tokens from a single document
-
-        Returns:
-            Counter: A list of tuple pairs the token string and an integer of the frequency of token in tokens list
-        """
-        
         counter = Counter()
         counter.update(tokens)
         return counter
-    
+
+    def __process_document(self, file_path: str, doc_id: int) -> None:
+        """
+        Takes a file path to a document which stores an HTML page and updates the inverted index
+        with tokens extracted from the text content. It reads the file from disk, extracts the HTML content,
+        updates the doc_id-URL map, tokenizes the textual content (including generating n-grams),
+        and updates the inverted index.
+        
+        Parameters:
+            file_path (str): The absolute file path to the document.
+            doc_id (int): The unique id for the document.
+        """
+        # Read JSON file from disk
+        data = read_json_file(file_path, self.logger)
+        if not data:
+            self.logger.warning(f"Skipping empty JSON file: {file_path}")
+            return
+
+        # Extract URL and check that it is valid
+        url = clean_url(data['url'])
+        if is_non_html_extension(url):
+            self.logger.warning(f"Skipping doc {doc_id}: URL with non HTML extension - {url}")
+            return
+
+        content = data['content']
+        if not content:
+            self.logger.warning(f"Skipping doc {doc_id}: empty content - {url}")
+            return
+        if is_xml(content):
+            self.logger.warning(f"Skipping doc {doc_id}: content is XML - {url}")
+            return
+
+        # --- Use the new n-gram token extraction ---
+        tokens = self.__extract_tokens_with_weighting(content, weigh_factor=2)
+        if tokens is None:
+            return
+
+        # Update document ID map and document length
+        self.__update_doc_id_map(doc_id, url)
+        self.__update_doc_lengths(doc_id, len(tokens))
+
+        # Count token frequencies from tokens (including unigrams, bigrams, and trigrams)
+        token_freq = InvertedIndex.__construct_token_freq_counter(tokens)
+
+        # Update the inverted index with token frequencies
+        for token, freq in token_freq.items():
+            tf = InvertedIndex.__compute_tf(freq, len(tokens))
+            if token and token[0].lower().isalnum() and token[0].lower().isascii():
+                first_char = token[0].lower()
+                # Structural weight is set to 1 here
+                self.alphanumerical_index[first_char][token].append((doc_id, freq, tf, 1))
+        
+        # Dump updated partial indexes to disk
+        modified_chars = {token[0].lower() for token in token_freq.keys() if token}
+        self.__dump_to_disk(modified_chars)
+
+        self.total_doc_indexed += 1
