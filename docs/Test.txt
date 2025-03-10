@@ -11,8 +11,8 @@ Good Preformance:
 
     uci graphics
     graduate learning
-    software engineering 
-    algorithm and data structure
+    Computer software
+    data structures
     Women in cs
     academic advising
     Bachelors of Science in Informatics
