@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import gc
 import math
 import simhash
@@ -13,18 +14,20 @@ from utils import clean_url, compute_tf_idf, get_logger, read_pickle_file, write
 PARTIAL_INDEX_SIZE_THRESHOLD_KB = 18000  # set threshold to 20000 KB (margin of error: 5000 KB)
 DOC_THRESHOLD_COUNT = 125
 
-MASTER_INDEX_DIR        = "index/master_index"  # "index/master_index"
-META_DIR                = "index/meta_data"    # "index/doc_id_map"
-PARTIAL_INDEX_DIR       = "index/partial_index" # "index/partial_index"
-TOKEN_TO_FILE_MAP_DIR   = "index/meta_data/token_to_file_map"
+BASE_DIR = Path("index")
+MASTER_INDEX_DIR        = BASE_DIR / "master_index"
+META_DIR                = BASE_DIR / "meta_data"
+PARTIAL_INDEX_DIR       = BASE_DIR / "partial_index"
+TOKEN_TO_FILE_MAP_DIR   = META_DIR / "token_to_file_map"
 
-DOC_ID_MAP_FILE     = os.path.join(META_DIR, "doc_id_map.json")
-DOC_LENGTH_FILE     = os.path.join(META_DIR, "doc_length.json")
-DOC_NORMS_FILE      = os.path.join(META_DIR, "doc_norms.json")
-MASTER_INDEX_FILE   = os.path.join(MASTER_INDEX_DIR, "master_index.json")
-META_DATA_FILE      = os.path.join(META_DIR, "meta_data.json")
-PAGERANK_FILE       = os.path.join(META_DIR, "page_rank.json")
-LINKGRAPH_FILE      = os.path.join(META_DIR, "link_graph.json")
+DOC_ID_MAP_FILE     = META_DIR / "doc_id_map.json"
+DOC_LENGTH_FILE     = META_DIR / "doc_length.json"
+DOC_NORMS_FILE      = META_DIR / "doc_norms.json"
+MASTER_INDEX_FILE   = MASTER_INDEX_DIR / "master_index.json"
+META_DATA_FILE      = META_DIR / "meta_data.json"
+PAGERANK_FILE       = META_DIR / "page_rank.json"
+LINKGRAPH_FILE      = META_DIR / "link_graph.json"
+
 
 class InvertedIndex: 
     def __init__(self):
@@ -48,29 +51,29 @@ class InvertedIndex:
         self.logger = get_logger("INVERTED_INDEX")
 
         # Initializes directories for index storage
-        os.makedirs(MASTER_INDEX_DIR, exist_ok=True)
-        os.makedirs(META_DIR, exist_ok=True) 
-        os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
-        os.makedirs(TOKEN_TO_FILE_MAP_DIR, exist_ok=True) 
+        MASTER_INDEX_DIR.mkdir(parents=True, exist_ok=True)
+        META_DIR.mkdir(parents=True, exist_ok=True)
+        PARTIAL_INDEX_DIR.mkdir(parents=True, exist_ok=True)
+        TOKEN_TO_FILE_MAP_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Initializes directories a-z within the partial index
-    for letter_ascii in range(ord('a'), ord('z') + 1):
-        os.makedirs(os.path.join(PARTIAL_INDEX_DIR, chr(letter_ascii)), exist_ok=True)
+        # Initializes directories a-z within the partial index
+        for letter_ascii in range(ord('a'), ord('z') + 1):
+            (PARTIAL_INDEX_DIR / chr(letter_ascii)).mkdir(parents=True, exist_ok=True)
 
-    # Initializes directories 0-9 within the partial index
-    for num in range(10):
-        os.makedirs(os.path.join(PARTIAL_INDEX_DIR, str(num)), exist_ok=True)
-
+        # Initializes directories 0-9 within the partial index
+        for num in range(10):
+            (PARTIAL_INDEX_DIR / str(num)).mkdir(parents=True, exist_ok=True)
 
     def build_index(self, corpus_dir: str) -> None: 
         """
         Process all JSON files in folder and build index.
         """
         for root, dirs, files in os.walk(corpus_dir):
+            root_path = Path(root)
             for file_name in files:
                 self.logger.info(f"Indexing doc: {self.doc_id}")
                 if file_name.endswith(".json"):
-                    self.__process_document(os.path.join(root, file_name), self.doc_id)
+                    self.__process_document(root_path / file_name, self.doc_id)
                 else:
                     self.logger.warning(f"File not does not end with .json extention: {file_name}")
                 
@@ -94,10 +97,13 @@ class InvertedIndex:
         self.logger.info(f"Building Master index...")
 
         # Iterate through all partial index files
-        for dir_name in sorted(os.listdir(PARTIAL_INDEX_DIR)):  # Ensure order is maintained
-            dir_path = os.path.join(PARTIAL_INDEX_DIR, dir_name)
-            for file_name in os.listdir(dir_path):
-                file_path = os.path.join(dir_path, file_name)
+        for dir_path in sorted(PARTIAL_INDEX_DIR.iterdir()):
+            if not dir_path.is_dir():
+                continue
+            for file_path in sorted(dir_path.iterdir()):
+                if not file_path.is_file():
+                    continue
+
                 self.logger.info(f"Adding: {file_path}")
 
                 partial_index = self.__read_partial_index_from_disk(file_path)
@@ -125,7 +131,7 @@ class InvertedIndex:
             if token in token_to_file_map:
                 file_list = token_to_file_map[token]
                 self.logger.info(f"'{token}' found in {len(file_list)} file/s")
-                for file_path in file_list:
+                for file_path in map(Path, file_list):
                     # Read in partial index from file
                     partial_index = self.__read_partial_index_from_disk(file_path)
 
@@ -193,8 +199,7 @@ class InvertedIndex:
             dict: A dictionary mapping tokens(str) to files(str)
         """
         token_to_file_map = defaultdict(list)
-        for file_name in os.listdir(TOKEN_TO_FILE_MAP_DIR):
-            file_path = os.path.join(TOKEN_TO_FILE_MAP_DIR, file_name)
+        for file_path in TOKEN_TO_FILE_MAP_DIR.iterdir():
             char_token_to_file_map = read_pickle_file(file_path, self.logger)
             for token, files in char_token_to_file_map.items():
                 token_to_file_map[token] = files
@@ -217,10 +222,10 @@ class InvertedIndex:
         
         # Compute global document frequency for each token
         global_df = defaultdict(int)
-        for subdir in os.listdir(PARTIAL_INDEX_DIR):
-            subdir_path = os.path.join(PARTIAL_INDEX_DIR, subdir)
-            for file_name in os.listdir(subdir_path):
-                file_path = os.path.join(subdir_path, file_name)
+        for subdir_path in PARTIAL_INDEX_DIR.iterdir():
+            if not subdir_path.is_dir():
+                continue  # Skip if it's not a directory
+            for file_path in subdir_path.iterdir():
                 partial_index = self.__read_partial_index_from_disk(file_path)
                 for token, postings in partial_index.items():
                     global_df[token] += len(postings)
@@ -229,10 +234,10 @@ class InvertedIndex:
 
         # Compute document norms using tf-idf weights
         doc_norms = defaultdict(float)
-        for subdir in os.listdir(PARTIAL_INDEX_DIR):
-            subdir_path = os.path.join(PARTIAL_INDEX_DIR, subdir)
-            for file_name in os.listdir(subdir_path):
-                file_path = os.path.join(subdir_path, file_name)
+        for subdir_path  in PARTIAL_INDEX_DIR.iterdir():
+            if not subdir_path.is_dir():
+                continue
+            for file_name in subdir_path.iterdir():
                 partial_index = self.__read_partial_index_from_disk(file_path)
                 for token, postings in partial_index.items():
                     df = global_df[token]
@@ -247,7 +252,7 @@ class InvertedIndex:
         write_json_file(DOC_NORMS_FILE, doc_norms, self.logger)
         self.logger.info(f"Document norms saved to: {DOC_NORMS_FILE}")
 
-    def compute_page_rank(self, damping: float = 0.85, max_iter: int = 50, convergence_threshold: float = 1.0e-4) -> dict:
+    def compute_page_rank(self, damping: float = 0.85, max_iter: int = 5, convergence_threshold: float = 1.0e-4) -> dict:
         """
         Parameters
             damping (float): probability that a user will continue following links from a page rather than jumping to a random page
@@ -429,16 +434,16 @@ class InvertedIndex:
         self.logger.info(f"Saving '{partial_index_char}' index to disk...")
         
         # Create a new .txt partial index file
-        filepath = os.path.join(PARTIAL_INDEX_DIR, partial_index_char)
-        index_file = os.path.join(filepath, f"index_part_{self.alphanumerical_counts[partial_index_char].indexNum}.pkl")
+        filepath = PARTIAL_INDEX_DIR / partial_index_char
+        index_file = filepath / f"index_part_{self.alphanumerical_counts[partial_index_char].indexNum}.pkl"
         write_pickle_file(index_file, self.alphanumerical_index[partial_index_char], self.logger)
             
         def save_token_to_file_map_disk() -> None: 
             # Update token-to-file mapping
-            token_to_file_path = os.path.join(TOKEN_TO_FILE_MAP_DIR, f"token_to_file_map_{partial_index_char}.pkl")
+            token_to_file_path = TOKEN_TO_FILE_MAP_DIR / f"token_to_file_map_{partial_index_char}.pkl"
             
             char_token_to_file_map = defaultdict(list)
-            if os.path.exists(token_to_file_path): 
+            if token_to_file_path.exists():
                 char_token_to_file_map = read_pickle_file(token_to_file_path, self.logger)
 
             for token in self.alphanumerical_index[partial_index_char]:
