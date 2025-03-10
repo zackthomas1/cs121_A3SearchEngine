@@ -1,5 +1,0 @@
-{
-    "url": "https://example.com/test4",
-    "content": "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"description\" content=\"Testing metadata for indexing.\">\n<title>List and Metadata Test</title>\n</head>\n<body>\n<h1>Statistical models help with text classification.</h1>\n<ul>\n<li>Neural networks excel in NLP tasks.</li>\n<li>Bag-of-words is a simple yet effective model.</li>\n<li>Word embeddings improve performance.</li>\n</ul>\n</body>\n</html>",
-    "encoding": "utf-8"
-}

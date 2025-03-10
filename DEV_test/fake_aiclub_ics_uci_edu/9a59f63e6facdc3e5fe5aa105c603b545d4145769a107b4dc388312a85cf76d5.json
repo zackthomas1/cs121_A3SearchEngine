@@ -1,5 +1,0 @@
-{
-    "url": "https://example.com/test2",
-    "content": "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"UTF-8\">\n<title>Basic Test Page</title>\n</head>\n<body>\n<h1>Understanding AI is important.</h1>\n<p>Data science helps extract useful insights.</p>\n<p>Computational linguistics is part of NLP.</p>\n</body>\n</html>",
-    "encoding": "utf-8"
-}
