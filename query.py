@@ -188,7 +188,7 @@ def ranked_search_bm25(query_tokens: list[str],
     # Return documents sorted by descending BM25 score, tie-breaking on doc_id.
     return sorted(scores.items(), key=lambda item: (-item[1], item[0]))
 
-def add_page_rank(scores: dict,
+def add_page_rank(scores: list,
                   pagerank: dict,
                   alpha: float = 1.0,
                   beta: float = 1.0   ) -> list:
