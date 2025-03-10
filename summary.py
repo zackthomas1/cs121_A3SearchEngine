@@ -1,6 +1,6 @@
 import time
 from inverted_index import InvertedIndex
-from query import process_query, ranked_search_cosine_similarity
+from query import process_query, ranked_search_cosine_similarity, add_page_rank
 
 def count_tokens(index: InvertedIndex) -> int:
     """
@@ -58,12 +58,15 @@ def retrive_relevant_urls(query: str, n: int, index: InvertedIndex) -> list[str]
 
     # avg_doc_length          = index.load_meta_data_from_disk()["aag_doc_length"]
     total_docs          = index.load_meta_data_from_disk()["total_doc_indexed"]    
+    page_rank_scores    = index.load_page_rank_from_disk()
 
     query_tokens = process_query(query)
 
     # Begin timing after recieving search query
     start_time = time.perf_counter() * 1000
     ranked_results = ranked_search_cosine_similarity(query_tokens, index, total_docs, doc_norms, token_to_file_map)
+    ranked_results = add_page_rank(ranked_results, page_rank_scores)
+
     end_time = time.perf_counter() * 1000
     print(f"Completed search: {end_time - start_time:.0f} ms")
 

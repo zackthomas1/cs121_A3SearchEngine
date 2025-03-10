@@ -198,7 +198,7 @@ def add_page_rank(scores: dict,
     
     # Combine cosine similarity score with PageRank.
     combined_scores = defaultdict(float)
-    for doc_id, text_score in scores.items():
+    for doc_id, text_score in scores:
         pr_score = pagerank.get(doc_id, 0.0)
         combined_scores[doc_id] = alpha * text_score + beta * pr_score
 
