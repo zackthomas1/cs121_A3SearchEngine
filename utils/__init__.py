@@ -86,7 +86,7 @@ def read_pickle_file(file_path: str, logger: Logger) -> dict:
         with open(file_path, "rb") as f:
             data = pickle.load(f)
     except Exception as e:
-        logger.error(f"Unable to read .txt file: {e}")
+        logger.error(f"Unable to read .plk file: {e}")
     
     return data
 

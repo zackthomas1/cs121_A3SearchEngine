@@ -53,14 +53,13 @@ class InvertedIndex:
         os.makedirs(PARTIAL_INDEX_DIR, exist_ok=True)
         os.makedirs(TOKEN_TO_FILE_MAP_DIR, exist_ok=True) 
 
-    # Initializes directories a-z within the partial index
-    for letter_ascii in range(ord('a'), ord('z') + 1):
-        os.makedirs(os.path.join(PARTIAL_INDEX_DIR, chr(letter_ascii)), exist_ok=True)
+        # Initializes directories a-z within the partial index
+        for letter_ascii in range(ord('a'), ord('z') + 1):
+            os.makedirs(os.path.join(PARTIAL_INDEX_DIR, chr(letter_ascii)), exist_ok=True)
 
-    # Initializes directories 0-9 within the partial index
-    for num in range(10):
-        os.makedirs(os.path.join(PARTIAL_INDEX_DIR, str(num)), exist_ok=True)
-
+        # Initializes directories 0-9 within the partial index
+        for num in range(10):
+            os.makedirs(os.path.join(PARTIAL_INDEX_DIR, str(num)), exist_ok=True)
 
     def build_index(self, corpus_dir: str) -> None: 
         """
@@ -205,7 +204,7 @@ class InvertedIndex:
         """
         Precomputes the Euclidean norm of each document's vector using tf-idf weighting. 
 
-        The norm of a document is the squer root of the sum of squared tf-idf weights
+        The norm of a document is the square root of the sum of squared tf-idf weights
         of all the tokens which are in that document. 
 
         Store precomputed norms in JSON file for look up at query time.
