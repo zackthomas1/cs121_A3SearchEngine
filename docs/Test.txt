@@ -13,10 +13,10 @@ Good Preformance:
     graduate learning
     Computer software
     data structures
-    Women in cs
+    Women in computer science
     academic advising
     Donald Bren Admissions
-    Bachelors of Science in Informatics
+    Bs Informatics
     Hackathons at UCI 2024
     Hacks at UCI events
     Undergraduate Research Opportunities Program 

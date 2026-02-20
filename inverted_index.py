@@ -204,7 +204,7 @@ class InvertedIndex:
         """
         Precomputes the Euclidean norm of each document's vector using tf-idf weighting. 
 
-        The norm of a document is the squer root of the sum of squared tf-idf weights
+        The norm of a document is the square root of the sum of squared tf-idf weights
         of all the tokens which are in that document. 
 
         Store precomputed norms in JSON file for look up at query time.

@@ -1,4 +1,5 @@
 # cs121_A3SearchEngine
+Search engine for pages in the UCI ICS domain. Implements both cosine similarity and BM25 Ranking algorithms. 
 
 ## Set up
 ### Download data set 
@@ -104,7 +105,7 @@ Downloads required nltk resources. Run setup.py once before building index or en
 ### Building Index
 $ ```python build_index.py --rootdir <file_path>```
 
-Builds the inverted index. If the index is not already built run build_index.py. Script only needs to
+Builds the inverted index. If the index is not already built run build_index.py.
 
 optional arguments:
 --rootdir <file_path> : File path to document corpus directory
